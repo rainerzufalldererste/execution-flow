@@ -37,8 +37,8 @@ project(ProjectName)
     ignoredefaultlibraries { "libcmt" }
   filter { }
 
-  linkoptions { "../3rdParty/llvm/lib/LLVMMC.lib", "../3rdParty/llvm/lib/LLVMMCA.lib", "../3rdParty/llvm/lib/LLVMX86Desc.lib", "../3rdParty/llvm/lib/LLVMX86Disassembler.lib", "../3rdParty/llvm/lib/LLVMX86Info.lib", "../3rdParty/llvm/lib/LLVMX86TargetMCA.lib" }
-  
+  linkoptions { "../3rdParty/llvm/lib/LLVMAnalysis.lib", "../3rdParty/llvm/lib/LLVMBitstreamReader.lib", "../3rdParty/llvm/lib/LLVMCodeGen.lib", "../3rdParty/llvm/lib/LLVMTransformUtils.lib", "../3rdParty/llvm/lib/LLVMTarget.lib", "../3rdParty/llvm/lib/LLVMSelectionDAG.lib", "../3rdParty/llvm/lib/LLVMGlobalISel.lib", "../3rdParty/llvm/lib/LLVMCFGuard.lib", "../3rdParty/llvm/lib/LLVMScalarOpts.lib", "../3rdParty/llvm/lib/LLVMObjCARCOpts.lib", "../3rdParty/llvm/lib/LLVMDebugInfoCodeView.lib", "../3rdParty/llvm/lib/LLVMDebugInfoPDB.lib", "../3rdParty/llvm/lib/LLVMMC.lib", "../3rdParty/llvm/lib/LLVMMCParser.lib", "../3rdParty/llvm/lib/LLVMAsmParser.lib", "../3rdParty/llvm/lib/LLVMRemarks.lib", "../3rdParty/llvm/lib/LLVMTargetParser.lib", "../3rdParty/llvm/lib/LLVMX86Disassembler.lib", "../3rdParty/llvm/lib/LLVMBinaryFormat.lib", "../3rdParty/llvm/lib/LLVMCodeGenTypes.lib", "../3rdParty/llvm/lib/LLVMDebugInfoDWARF.lib", "../3rdParty/llvm/lib/LLVMDemangle.lib", "../3rdParty/llvm/lib/LLVMMCA.lib", "../3rdParty/llvm/lib/LLVMObject.lib", "../3rdParty/llvm/lib/LLVMSupport.lib", "../3rdParty/llvm/lib/LLVMTextAPI.lib", "../3rdParty/llvm/lib/LLVMX86Info.lib", "../3rdParty/llvm/lib/LLVMBitReader.lib", "../3rdParty/llvm/lib/LLVMCore.lib", "../3rdParty/llvm/lib/LLVMDebugInfoMSF.lib", "../3rdParty/llvm/lib/LLVMIRReader.lib", "../3rdParty/llvm/lib/LLVMMCDisassembler.lib", "../3rdParty/llvm/lib/LLVMProfileData.lib", "../3rdParty/llvm/lib/LLVMSymbolize.lib", "../3rdParty/llvm/lib/LLVMX86CodeGen.lib", "../3rdParty/llvm/lib/LLVMX86Desc.lib", "../3rdParty/llvm/lib/LLVMX86TargetMCA.lib" }
+
   targetname(ProjectName)
   targetdir "../builds/lib"
   debugdir "../builds/lib"

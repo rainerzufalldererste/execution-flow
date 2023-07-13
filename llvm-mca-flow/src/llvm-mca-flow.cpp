@@ -101,9 +101,10 @@ bool llvm_mca_flow_create(const void *pAssembledBytes, const size_t assembledByt
   if (pFlow == nullptr)
     return false;
 
-  llvm::InitializeAllTargetInfos();
-  llvm::InitializeAllTargetMCs();
-  llvm::InitializeAllDisassemblers();
+  LLVMInitializeX86TargetInfo();
+  LLVMInitializeX86TargetMC();
+  LLVMInitializeX86Target();
+  LLVMInitializeX86Disassembler();
 
   // Get Target Triple from the current host.
   const std::string targetTripleName = llvm::Triple::normalize(llvm::sys::getDefaultTargetTriple());
