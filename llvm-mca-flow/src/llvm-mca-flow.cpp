@@ -2,10 +2,10 @@
 //
 // Copyright (c) 2023, Christoph Stiller. All rights reserved.
 // 
-// Redistribution and use in source and binary forms, with or without 
+// Redistribution and use in next and binary forms, with or without 
 // modification, are permitted provided that the following conditions are met:
 // 
-// 1. Redistributions of source code must retain the above copyright notice,
+// 1. Redistributions of next code must retain the above copyright notice,
 //    this list of conditions and the following disclaimer.
 // 
 // 2. Redistributions in binary form must reproduce the above copyright notice,
@@ -29,24 +29,70 @@
 #include "llvm-mca-flow.h"
 
 #include <algorithm>
+#include <queue>
 
 #pragma warning (push, 0)
 #include "llvm/Support/TargetSelect.h"
+#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/TargetParser/Host.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCContext.h"
+#include "llvm/MC/MCInstBuilder.h"
 #include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/MC/MCSubtargetInfo.h"
 #include "llvm/MC/MCTargetOptions.h"
 #include "llvm/MC/MCTargetOptionsCommandFlags.h"
 #include "llvm/MC/MCDisassembler/MCDisassembler.h"
 #include "llvm/MC/TargetRegistry.h"
+#include "llvm/MCA/CustomBehaviour.h"
+#include "llvm/MCA/HWEventListener.h"
+#include "llvm/MCA/InstrBuilder.h"
+#include "llvm/MCA/Pipeline.h"
+#include "llvm/MCA/SourceMgr.h"
+#include "llvm/MCA/Stages/Stage.h"
+#include "llvm/MCA/Stages/InstructionTables.h"
 #pragma warning (pop)
 
 ////////////////////////////////////////////////////////////////////////////////
 
+class FetchStage final : public llvm::mca::Stage
+{
+private:
+  llvm::mca::InstRef lastInstruction;
+  llvm::mca::SourceMgr *pSource; // initialized in the constructor.
+  std::queue<std::unique_ptr<llvm::mca::Instruction>> referencedInstructions;
+
+  llvm::Error iterateSource();
+
+public:
+  inline FetchStage(llvm::mca::SourceMgr *pSource) : pSource(pSource) {}
+
+  bool isAvailable(const llvm::mca::InstRef &IR) const override;
+  bool hasWorkToComplete() const override;
+  llvm::Error execute(llvm::mca::InstRef &IR) override;
+  llvm::Error cycleStart() override;
+  llvm::Error cycleResume() override;
+  llvm::Error cycleEnd() override;
+};
+
 ////////////////////////////////////////////////////////////////////////////////
+
+class FlowView final : public llvm::mca::HWEventListener
+{
+private:
+  PortUsageFlow *pFlow; // initialized in the constructor.
+  size_t instructionIndex = 0;
+
+public:
+  inline FlowView(PortUsageFlow *pFlow) : pFlow(pFlow) {}
+
+  inline void onCycleEnd() override { instructionIndex++; }
+
+  void onEvent(const llvm::mca::HWInstructionEvent &evnt) override;
+  void onEvent(const llvm::mca::HWStallEvent &evnt) override;
+  void onEvent(const llvm::mca::HWPressureEvent &evnt) override;
+};
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -78,7 +124,7 @@ bool llvm_mca_flow_create(const void *pAssembledBytes, const size_t assembledByt
   std::unique_ptr<llvm::MCSubtargetInfo> subtargetInfo(target->createMCSubtargetInfo(targetTriple.str(), "", ""));
 
   // Create Machine Code Context from the triple.
-  llvm::MCContext context(targetTriple, &*asmInfo, &*registerInfo, &*subtargetInfo);
+  llvm::MCContext context(targetTriple, asmInfo.get(), registerInfo.get(), subtargetInfo.get());
 
   // Get the disassembler.
   std::unique_ptr<llvm::MCDisassembler> disasm(target->createMCDisassembler(*subtargetInfo, context));
@@ -89,7 +135,9 @@ bool llvm_mca_flow_create(const void *pAssembledBytes, const size_t assembledByt
   bool result = true;
 
   std::vector<llvm::MCInst> decodedInstructions;
+  PortUsageFlow flow;
 
+  // Disassemble bytes.
   for (size_t i = 0; i < assembledBytesLength;)
   {
     size_t instructionSize = 1;
@@ -105,6 +153,7 @@ bool llvm_mca_flow_create(const void *pAssembledBytes, const size_t assembledByt
       break;
 
     default: // we ignore soft-fails.
+      flow.perClockInstruction.emplace_back(decodedInstructions.size(), i);
       decodedInstructions.push_back(retrievedInstruction);
       break;
     }
@@ -112,9 +161,163 @@ bool llvm_mca_flow_create(const void *pAssembledBytes, const size_t assembledByt
     i += instructionSize;
   }
 
+  // Have we found something?
+  if (decodedInstructions.size() == 0)
+    return false;
 
+  // Prepare everything for the instruction builder in order to retrieve `llvm::mca::Instruction`s from the `llvm::Inst`s.
+  std::unique_ptr<llvm::MCInstrInfo> instructionInfo(target->createMCInstrInfo());
+  std::unique_ptr<llvm::MCInstrAnalysis> instructionAnalysis(target->createMCInstrAnalysis(instructionInfo.get()));
+  llvm::mca::InstrPostProcess postProcess(*subtargetInfo, *instructionInfo);
+  std::unique_ptr<llvm::mca::InstrumentManager> instrumentManager(target->createInstrumentManager(*subtargetInfo, *instructionInfo));
+
+  llvm::mca::InstrPostProcess instructionPostProcess(*subtargetInfo, *instructionInfo);
+  llvm::mca::InstrBuilder instructionBuilder(*subtargetInfo, *instructionInfo, *registerInfo, instructionAnalysis.get(), *instrumentManager);
+  
+  instructionPostProcess.resetState();
+
+  llvm::SmallVector<std::unique_ptr<llvm::mca::Instruction>> mcaInstructions;
+
+  // Retrieve `llvm::mca::Instruction`s.
+  for (const auto &instr : decodedInstructions)
+  {
+    llvm::Expected<std::unique_ptr<llvm::mca::Instruction>> mcaInstr = instructionBuilder.createInstruction(instr, llvm::SmallVector<llvm::mca::Instrument *>()); // from debugging llvm-mca it appears that the second parameter (vector) can be empty (at least whenever there aren't any jumps / calls in the active region.
+
+    if (!mcaInstr)
+    {
+      result = false;
+      break;
+    }
+
+    postProcess.postProcessInstruction(mcaInstr.get(), instr);
+    mcaInstructions.emplace_back(std::move(mcaInstr.get()));
+  }
+
+  // Create source for the `Pipeline` & `HWEventListener`.
+  llvm::mca::CircularSourceMgr source(mcaInstructions, 2);
+
+  // Create and fill the pipeline with the source.
+  std::unique_ptr<llvm::mca::Pipeline> pipeline;
+  pipeline->appendStage(std::make_unique<FetchStage>(&source));
+
+  const llvm::MCSchedModel &schedulerModel = subtargetInfo->getSchedModel();
+  pipeline->appendStage(std::make_unique<llvm::mca::InstructionTables>(schedulerModel));
+
+
+
+  FlowView flowView(&flow);
+
+  *pFlow = flow;
 
   return result;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+
+llvm::Error FetchStage::iterateSource()
+{
+  assert(!lastInstruction && "The last instruction should've been invalidated by now");
+
+  if (!pSource->hasNext())
+  {
+    if (pSource->isEnd())
+      return llvm::make_error<llvm::mca::InstStreamPause>();
+
+    return llvm::ErrorSuccess();
+  }
+
+  // Retrieve next instruction.
+  llvm::mca::SourceRef nextInstruction = pSource->peekNext();
+
+  // Add to referenced instructions and make it the active instruction.
+  std::unique_ptr<llvm::mca::Instruction> referencableInstruction = std::make_unique<llvm::mca::Instruction>(nextInstruction.second);
+  lastInstruction = llvm::mca::InstRef(nextInstruction.first, referencableInstruction.get());
+  referencedInstructions.push(std::move(referencableInstruction));
+  
+  // Move the source forward.
+  pSource->updateNext();
+  
+  return llvm::ErrorSuccess();
+}
+
+bool FetchStage::isAvailable(const llvm::mca::InstRef &instruction) const
+{
+  (void)instruction; // we don't need this, as we're merely imitating the instruction fetching procedure.
+
+  if (lastInstruction)
+    return checkNextStage(lastInstruction);
+
+  return false;
+}
+
+bool FetchStage::hasWorkToComplete() const
+{
+  if (lastInstruction)
+    return true;
+
+  return !pSource->isEnd();
+}
+
+llvm::Error FetchStage::execute(llvm::mca::InstRef &instruction)
+{
+  (void)instruction; // we don't need this, as we're merely imitating the instruction fetching procedure.
+
+  assert(!lastInstruction && "No Instruction active.");
+
+  llvm::Error result = moveToTheNextStage(instruction);
+
+  if (!result.success())
+    return std::move(result);
+
+  instruction.invalidate();
+
+  return iterateSource();
+}
+
+llvm::Error FetchStage::cycleStart()
+{
+  if (!lastInstruction)
+    return iterateSource();
+  else
+    return llvm::ErrorSuccess();
+}
+
+llvm::Error FetchStage::cycleResume()
+{
+  assert(!lastInstruction && "No Instruction active.");
+
+  return iterateSource();
+}
+
+llvm::Error FetchStage::cycleEnd()
+{
+  // Remove all instructions that aren't referenced anymore.
+  while (referencedInstructions.size())
+  {
+    const auto &first = referencedInstructions.front();
+
+    if (!first->isRetired())
+      break;
+
+    referencedInstructions.pop();
+  }
+
+  return llvm::ErrorSuccess();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+void FlowView::onEvent(const llvm::mca::HWInstructionEvent &evnt)
+{
+  (void)evnt;
+}
+
+void FlowView::onEvent(const llvm::mca::HWStallEvent &evnt)
+{
+  (void)evnt;
+}
+
+void FlowView::onEvent(const llvm::mca::HWPressureEvent &evnt)
+{
+  (void)evnt;
+}

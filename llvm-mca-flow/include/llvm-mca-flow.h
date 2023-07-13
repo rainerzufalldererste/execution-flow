@@ -42,9 +42,14 @@ using ResourceUsageInfo = std::pair<size_t, double_t>;
 
 struct InstructionInfo
 {
-  size_t instructionIndex, clockDispatched, clockExecuting, clockExecuted, clockRetired;
+  size_t instructionIndex, instructionByteOffset, clockDispatched, clockExecuting, clockExecuted, clockRetired;
   std::vector<ResourceUsageInfo> usage;
   std::vector<std::string> bottleneckInfo;
+
+  inline InstructionInfo(const size_t instructionIndex, const size_t instructionByteOffset) :
+    instructionIndex(instructionIndex),
+    instructionByteOffset(instructionByteOffset)
+  { }
 };
 
 struct PortUsageFlow
