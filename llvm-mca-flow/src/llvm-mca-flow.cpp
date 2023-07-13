@@ -138,32 +138,34 @@ bool llvm_mca_flow_create(const void *pAssembledBytes, const size_t assembledByt
   PortUsageFlow flow;
 
   // Disassemble bytes.
-  for (size_t i = 0; i < assembledBytesLength;)
   {
-    size_t instructionSize = 1;
-
-    llvm::MCInst retrievedInstruction;
-    const llvm::MCDisassembler::DecodeStatus status = disasm->getInstruction(retrievedInstruction, instructionSize, bytes.slice(i), i, llvm::nulls());
-
-    switch (status)
+    for (size_t i = 0; i < assembledBytesLength;)
     {
-    case llvm::MCDisassembler::Fail: // let's try to squeeze out as many instructions as we can find...
-      instructionSize = std::max(instructionSize, (size_t)1);
-      result = false;
-      break;
+      size_t instructionSize = 1;
 
-    default: // we ignore soft-fails.
-      flow.perClockInstruction.emplace_back(decodedInstructions.size(), i);
-      decodedInstructions.push_back(retrievedInstruction);
-      break;
+      llvm::MCInst retrievedInstruction;
+      const llvm::MCDisassembler::DecodeStatus status = disasm->getInstruction(retrievedInstruction, instructionSize, bytes.slice(i), i, llvm::nulls());
+
+      switch (status)
+      {
+      case llvm::MCDisassembler::Fail: // let's try to squeeze out as many instructions as we can find...
+        instructionSize = std::max(instructionSize, (size_t)1);
+        result = false;
+        break;
+
+      default: // we ignore soft-fails.
+        flow.perClockInstruction.emplace_back(decodedInstructions.size(), i);
+        decodedInstructions.push_back(retrievedInstruction);
+        break;
+      }
+
+      i += instructionSize;
     }
 
-    i += instructionSize;
+    // Have we found something?
+    if (decodedInstructions.size() == 0)
+      return false;
   }
-
-  // Have we found something?
-  if (decodedInstructions.size() == 0)
-    return false;
 
   // Prepare everything for the instruction builder in order to retrieve `llvm::mca::Instruction`s from the `llvm::Inst`s.
   std::unique_ptr<llvm::MCInstrInfo> instructionInfo(target->createMCInstrInfo());
@@ -203,9 +205,39 @@ bool llvm_mca_flow_create(const void *pAssembledBytes, const size_t assembledByt
   const llvm::MCSchedModel &schedulerModel = subtargetInfo->getSchedModel();
   pipeline->appendStage(std::make_unique<llvm::mca::InstructionTables>(schedulerModel));
 
+  // Get Stages from Scheduler model.
+  {
+    const size_t resourceTypeCount = schedulerModel.getNumProcResourceKinds();
+    size_t validTypeIndex = (size_t)-1;
 
+    for (size_t i = 1; i < resourceTypeCount; i++) // index 0 appears to be used as `null`-index.
+    {
+      const llvm::MCProcResourceDesc *pResource = schedulerModel.getProcResource(i);
+      const size_t perResourcePortCount = pResource->NumUnits;
 
+      if (perResourcePortCount == 0)
+        continue;
+
+      ++validTypeIndex;
+
+      for (size_t j = 0; j < perResourcePortCount; j++)
+      {
+        std::string name = pResource->Name;
+
+        if (perResourcePortCount > 1)
+          name += " " + (j + 1);
+
+        flow.ports.emplace_back(validTypeIndex, j, name);
+      }
+    }
+  }
+
+  // Create event handler to observe simulated hardware events.
   FlowView flowView(&flow);
+  pipeline->addEventListener(&flowView);
+
+  // Run the pipeline.
+  pipeline->run();
 
   *pFlow = flow;
 

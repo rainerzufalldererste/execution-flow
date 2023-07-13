@@ -37,13 +37,33 @@
 
 ////////////////////////////////////////////////////////////////////////////////
 
-// resource index, resource usage
-using ResourceUsageInfo = std::pair<size_t, double_t>;
+struct ResourceInfo
+{
+  size_t resourceTypeIndex, resourceTypeSubIndex;
+  std::string name;
+
+  inline ResourceInfo(const size_t type, const size_t subIndex, const std::string name) :
+    resourceTypeIndex(type),
+    resourceTypeSubIndex(subIndex),
+    name(name)
+  { }
+};
+
+struct ResourcePressureInfo
+{
+  size_t resourceIndex;
+  double_t pressure;
+
+  inline ResourcePressureInfo(const size_t index, const double_t pressure) :
+    resourceIndex(index),
+    pressure(pressure)
+  { }
+};
 
 struct InstructionInfo
 {
   size_t instructionIndex, instructionByteOffset, clockDispatched, clockExecuting, clockExecuted, clockRetired;
-  std::vector<ResourceUsageInfo> usage;
+  std::vector<ResourcePressureInfo> usage;
   std::vector<std::string> bottleneckInfo;
 
   inline InstructionInfo(const size_t instructionIndex, const size_t instructionByteOffset) :
@@ -54,7 +74,7 @@ struct InstructionInfo
 
 struct PortUsageFlow
 {
-  std::vector<std::string> ports;
+  std::vector<ResourceInfo> ports;
   std::vector<InstructionInfo> perClockInstruction;
 };
 
