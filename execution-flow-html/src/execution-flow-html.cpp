@@ -76,9 +76,9 @@ int main(int argc, char **pArgv)
   if (!result)
     puts("Failed to create port usage flow correctly. This could mean that the provided file wasn't valid.");
 
-  printf("%" PRIu64 " Instructions decoded.\n", flow.perClockInstruction.size());
+  printf("%" PRIu64 " Instructions decoded.\n", flow.instructionExecutionInfo.size());
 
-  if (flow.perClockInstruction.size() == 0)
+  if (flow.instructionExecutionInfo.size() == 0)
   {
     puts("Aborting.");
     return 1;

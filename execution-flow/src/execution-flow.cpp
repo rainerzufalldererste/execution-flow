@@ -66,6 +66,7 @@ private:
   llvm::SmallDenseMap<std::pair<unsigned, unsigned>, size_t, 32U> llvmResource2ListedResourceIdx;
   bool hasFirstObservedInstructionClock = false;
   size_t firstObservedInstructionClock = 0;
+  llvm::SmallVector<bool> isRegisterFileRelevant;
 
 public:
   inline FlowView(PortUsageFlow *pFlow) : pFlow(pFlow) {}
@@ -77,6 +78,7 @@ public:
   void onEvent(const llvm::mca::HWPressureEvent &evnt) override;
 
   void addLLVMResourceToPortIndexLookup(const std::pair<std::pair<size_t, size_t>, size_t> &keyValuePair);
+  void addRegisterFileRelevancy(const bool isRelevant);
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -144,7 +146,7 @@ bool execution_flow_create(const void *pAssembledBytes, const size_t assembledBy
         break;
 
       default: // we ignore soft-fails.
-        flow.perClockInstruction.emplace_back(decodedInstructions.size(), i);
+        flow.instructionExecutionInfo.emplace_back(decodedInstructions.size(), i);
         decodedInstructions.push_back(retrievedInstruction);
         break;
       }
@@ -245,8 +247,12 @@ bool execution_flow_create(const void *pAssembledBytes, const size_t assembledBy
     for (size_t i = 0; i < extraInfo.NumRegisterFiles; i++)
     {
       const llvm::MCRegisterFileDesc &registerFile = extraInfo.RegisterFiles[i];
+      const bool registerFileRelevant = (registerFile.NumPhysRegs != 0);
 
-      if (registerFile.NumPhysRegs == 0)
+      // Let the flow view know if we're using that register file.
+      flowView.addRegisterFileRelevancy(registerFileRelevant);
+
+      if (!registerFileRelevant)
         continue;
 
       flow.hardwareRegisters.emplace_back(registerFile.Name, registerFile.NumPhysRegs);
@@ -268,90 +274,140 @@ bool execution_flow_create(const void *pAssembledBytes, const size_t assembledBy
 
 void FlowView::onEvent(const llvm::mca::HWInstructionEvent &evnt)
 {
-  const size_t instructionCount = pFlow->perClockInstruction.size();
+  const size_t instructionCount = pFlow->instructionExecutionInfo.size();
   assert(instructionCount > 0 && "There should already be a reference to all instructions in this vector.");
 
   const size_t instructionIndex = evnt.IR.getSourceIndex() % instructionCount;
   const size_t runIndex = evnt.IR.getSourceIndex() / instructionCount;
 
-  InstructionInfo &instructionInfo = pFlow->perClockInstruction[instructionIndex];
+  InstructionInfo &instructionInfo = pFlow->instructionExecutionInfo[instructionIndex];
 
-  if (runIndex == 1) // since we're assuming this is a loop, we'll take the second iteration, to make sure latencies are carried over correctly.
+  if (runIndex != 1) // since we're assuming this is a loop, we'll take the second iteration, to make sure latencies are carried over correctly.
+    return;
+
+  if (!hasFirstObservedInstructionClock)
   {
-    if (!hasFirstObservedInstructionClock)
+    hasFirstObservedInstructionClock = true;
+    firstObservedInstructionClock = instructionClock;
+  }
+
+  switch (evnt.Type)
+  {
+  case llvm::mca::HWInstructionEvent::Ready:
+  {
+    instructionInfo.clockReady = instructionClock - firstObservedInstructionClock;
+    break;
+  }
+
+  case llvm::mca::HWInstructionEvent::Dispatched:
+  {
+    const auto &dispatchedEvent = static_cast<const llvm::mca::HWInstructionDispatchedEvent &>(evnt);
+
+    instructionInfo.clockDispatched = instructionClock - firstObservedInstructionClock;
+    instructionInfo.uOpCount = dispatchedEvent.MicroOpcodes;
+
+    for (size_t i = 0; i < dispatchedEvent.UsedPhysRegs.size(); i++)
     {
-      hasFirstObservedInstructionClock = true;
-      firstObservedInstructionClock = instructionClock;
+      assert(i < isRegisterFileRelevant.size() && "More register files used than previously added");
+
+      if (!isRegisterFileRelevant[i]) // Skip ones that were empty.
+        continue;
+
+      instructionInfo.physicalRegistersObstructedPerRegisterType.push_back((size_t)dispatchedEvent.UsedPhysRegs[i]);
     }
 
-    switch (evnt.Type)
+    break;
+  }
+
+  case llvm::mca::HWInstructionEvent::Executed:
+  {
+    instructionInfo.clockExecuted = instructionClock - firstObservedInstructionClock;
+    break;
+  }
+
+  case llvm::mca::HWInstructionEvent::Pending:
+  {
+    instructionInfo.clockPending = instructionClock - firstObservedInstructionClock;
+    break;
+  }
+
+  case llvm::mca::HWInstructionEvent::Retired:
+  {
+    const auto &retiredEvent = static_cast<const llvm::mca::HWInstructionRetiredEvent &>(evnt);
+    (void)retiredEvent; // seems to only contain the same registers that the dispatched event already contained, marking them as free.
+
+    instructionInfo.clockRetired = instructionClock - firstObservedInstructionClock;
+
+    break;
+  }
+
+  case llvm::mca::HWInstructionEvent::Issued:
+  {
+    const auto &issuedEvent = static_cast<const llvm::mca::HWInstructionIssuedEvent &>(evnt);
+
+    instructionInfo.clockIssued = instructionClock - firstObservedInstructionClock;
+
+    for (const auto &resourceUsage : issuedEvent.UsedResources)
     {
-    case llvm::mca::HWInstructionEvent::Ready:
-    {
-      instructionInfo.clockReady = instructionClock - firstObservedInstructionClock;
-      break;
-    }
-
-    case llvm::mca::HWInstructionEvent::Dispatched:
-    {
-      const auto &dispatcheddEvent = static_cast<const llvm::mca::HWInstructionDispatchedEvent &>(evnt);
-
-      instructionInfo.clockDispatched = instructionClock - firstObservedInstructionClock;
-      instructionInfo.uOpCount = dispatcheddEvent.MicroOpcodes;
-
-      for (uint32_t reg : dispatcheddEvent.UsedPhysRegs)
-        instructionInfo.physicalRegistersObstructed.push_back((size_t)reg);
-
-      break;
-    }
-
-    case llvm::mca::HWInstructionEvent::Executed:
-    {
-      instructionInfo.clockExecuted = instructionClock - firstObservedInstructionClock;
-      break;
-    }
-
-    case llvm::mca::HWInstructionEvent::Pending:
-    {
-      instructionInfo.clockPending = instructionClock - firstObservedInstructionClock;
-      break;
-    }
-
-    case llvm::mca::HWInstructionEvent::Retired:
-    {
-      const auto &retiredEvent = static_cast<const llvm::mca::HWInstructionRetiredEvent &>(evnt);
-      (void)retiredEvent; // seems to only contain the same registers that the dispatched event already contained, marking them as free.
-
-      instructionInfo.clockRetired = instructionClock - firstObservedInstructionClock;
-
-      break;
-    }
-
-    case llvm::mca::HWInstructionEvent::Issued:
-    {
-      const auto &issuedEvent = static_cast<const llvm::mca::HWInstructionIssuedEvent &>(evnt);
-
-      instructionInfo.clockIssued = instructionClock - firstObservedInstructionClock;
-
-      for (const auto &resourceUsage : issuedEvent.UsedResources)
+      if (!llvmResource2ListedResourceIdx.contains(resourceUsage.first))
       {
-        if (!llvmResource2ListedResourceIdx.contains(resourceUsage.first))
-          continue;
-
-        const size_t portIndex = llvmResource2ListedResourceIdx[resourceUsage.first];
-
-        instructionInfo.usage.push_back(ResourcePressureInfo(portIndex, (double)resourceUsage.second));
+        assert(false && "The resource lookup doesn't contain this resource.");
+        continue;
       }
 
-      break;
+      const size_t portIndex = llvmResource2ListedResourceIdx[resourceUsage.first];
+
+      instructionInfo.usage.push_back(ResourcePressureInfo(portIndex, (double)resourceUsage.second));
     }
-    }
+
+    break;
+  }
   }
 }
 
 void FlowView::onEvent(const llvm::mca::HWStallEvent &evnt)
 {
-  (void)evnt;
+  const size_t instructionCount = pFlow->instructionExecutionInfo.size();
+  assert(instructionCount > 0 && "There should already be a reference to all instructions in this vector.");
+
+  const size_t instructionIndex = evnt.IR.getSourceIndex() % instructionCount;
+  const size_t runIndex = evnt.IR.getSourceIndex() / instructionCount;
+
+  InstructionInfo &instructionInfo = pFlow->instructionExecutionInfo[instructionIndex];
+
+  if (runIndex != 1) // since we're assuming this is a loop, we'll take the second iteration, to make sure latencies are carried over correctly.
+  {
+    switch (evnt.Type)
+    {
+    case llvm::mca::HWStallEvent::RegisterFileStall:
+      instructionInfo.bottleneckInfo.emplace_back("Register Unavailable");
+      break;
+
+    case llvm::mca::HWStallEvent::RetireControlUnitStall:
+      instructionInfo.bottleneckInfo.emplace_back("Retire Tokens Unavailable");
+      break;
+
+    case llvm::mca::HWStallEvent::DispatchGroupStall:
+      instructionInfo.bottleneckInfo.emplace_back("Static Restrictions on the Dispatch Group");
+      break;
+
+    case llvm::mca::HWStallEvent::SchedulerQueueFull:
+      instructionInfo.bottleneckInfo.emplace_back("Scheduler Queue Full");
+      break;
+
+    case llvm::mca::HWStallEvent::LoadQueueFull:
+      instructionInfo.bottleneckInfo.emplace_back("Load Queue Full");
+      break;
+
+    case llvm::mca::HWStallEvent::StoreQueueFull:
+      instructionInfo.bottleneckInfo.emplace_back("Store Queue Full");
+      break;
+
+    case llvm::mca::HWStallEvent::CustomBehaviourStall:
+      instructionInfo.bottleneckInfo.emplace_back("Structural Hazard");
+      break;
+    }
+  }
 }
 
 void FlowView::onEvent(const llvm::mca::HWPressureEvent &evnt)
@@ -362,4 +418,9 @@ void FlowView::onEvent(const llvm::mca::HWPressureEvent &evnt)
 void FlowView::addLLVMResourceToPortIndexLookup(const std::pair<std::pair<size_t, size_t>, size_t> &keyValuePair)
 {
   llvmResource2ListedResourceIdx.insert(keyValuePair);
+}
+
+void FlowView::addRegisterFileRelevancy(const bool isRelevant)
+{
+  isRegisterFileRelevant.push_back(isRelevant);
 }

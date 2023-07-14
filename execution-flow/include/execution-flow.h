@@ -76,7 +76,7 @@ struct InstructionInfo
   size_t instructionIndex, instructionByteOffset, clockPending, clockReady, clockIssued, clockExecuted, clockDispatched, clockRetired, uOpCount;
   std::vector<ResourcePressureInfo> usage;
   std::vector<std::string> bottleneckInfo;
-  std::vector<size_t> physicalRegistersObstructed;
+  std::vector<size_t> physicalRegistersObstructedPerRegisterType;
 
   inline InstructionInfo(const size_t instructionIndex, const size_t instructionByteOffset) :
     instructionIndex(instructionIndex),
@@ -95,7 +95,7 @@ struct PortUsageFlow
 {
   std::vector<ResourceInfo> ports;
   std::vector<HardwareRegisterCount> hardwareRegisters;
-  std::vector<InstructionInfo> perClockInstruction;
+  std::vector<InstructionInfo> instructionExecutionInfo;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
