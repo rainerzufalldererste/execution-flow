@@ -232,7 +232,7 @@ bool execution_flow_create(const void *pAssembledBytes, const size_t assembledBy
         if (perResourcePortCount > 1)
           name = name + " " + std::to_string(j + 1);
 
-        flowView.addLLVMResourceToPortIndexLookup({ {i, j}, { flow.ports.size() }});
+        flowView.addLLVMResourceToPortIndexLookup({ {i, (uint32_t)1 << j }, { flow.ports.size() }});
         flow.ports.emplace_back(validTypeIndex, j, name);
       }
     }
