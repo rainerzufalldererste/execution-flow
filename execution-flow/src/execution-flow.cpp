@@ -26,7 +26,7 @@
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-#include "llvm-mca-flow.h"
+#include "execution-flow.h"
 
 #include <algorithm>
 #include <queue>
@@ -83,7 +83,7 @@ public:
 
 #pragma optimize ("", off)
 
-bool llvm_mca_flow_create(const void *pAssembledBytes, const size_t assembledBytesLength, PortUsageFlow *pFlow)
+bool execution_flow_create(const void *pAssembledBytes, const size_t assembledBytesLength, PortUsageFlow *pFlow)
 {
   if (pFlow == nullptr)
     return false;

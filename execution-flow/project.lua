@@ -1,4 +1,4 @@
-ProjectName = "llvm-mca-flow"
+ProjectName = "execution-flow"
 project(ProjectName)
 
   --Settings

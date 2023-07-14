@@ -26,7 +26,7 @@
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-#include "llvm-mca-flow.h"
+#include "execution-flow.h"
 
 #include <stdio.h>
 #include <inttypes.h>
@@ -49,7 +49,7 @@ int main(int argc, char **pArgv)
 {
   if (argc == 1)
   {
-    puts("Usage: llvm-mca-flow-html <RawAssembledBinaryFile>");
+    puts("Usage: execution-flow-html <RawAssembledBinaryFile>");
     return 0;
   }
 
@@ -71,7 +71,7 @@ int main(int argc, char **pArgv)
 
   // Create flow.
   PortUsageFlow flow;
-  const bool result = llvm_mca_flow_create(pData, fileSize, &flow);
+  const bool result = execution_flow_create(pData, fileSize, &flow);
 
   if (!result)
     puts("Failed to create port usage flow correctly. This could mean that the provided file wasn't valid.");

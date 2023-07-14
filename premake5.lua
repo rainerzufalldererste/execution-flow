@@ -1,4 +1,4 @@
-solution "llvm-mca-flow"
+solution "execution-flow"
   
   editorintegration "On"
   platforms { "x64" }
@@ -16,5 +16,5 @@ solution "llvm-mca-flow"
     configurations { "Debug", "Release" }
   end
 
-  dofile "llvm-mca-flow/project.lua"
-  dofile "llvm-mca-flow-html/project.lua"
+  dofile "execution-flow/project.lua"
+  dofile "execution-flow-html/project.lua"

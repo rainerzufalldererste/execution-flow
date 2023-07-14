@@ -1,4 +1,4 @@
-ProjectName = "llvm-mca-flow-html"
+ProjectName = "execution-flow-html"
 project(ProjectName)
 
   --Settings
@@ -6,7 +6,7 @@ project(ProjectName)
   language "C++"
   staticruntime "On"
 
-  dependson { "llvm-mca-flow" }
+  dependson { "execution-flow" }
   cppdialect "C++17"
 
   filter { "system:windows" }
@@ -30,9 +30,9 @@ project(ProjectName)
   files { "src/**.cpp", "src/**.c", "src/**.cc", "src/**.h", "src/**.hh", "src/**.hpp", "src/**.inl", "src/**rc" }
   files { "project.lua" }
   
-  includedirs { "../llvm-mca-flow/include" }
+  includedirs { "../execution-flow/include" }
 
-  links { "../builds/lib/llvm-mca-flow.lib" }
+  links { "../builds/lib/execution-flow.lib" }
 
   filter { "configurations:Debug", "system:Windows" }
     ignoredefaultlibraries { "libcmt" }

@@ -26,8 +26,8 @@
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-#ifndef llvm_mca_flow_h__
-#define llvm_mca_flow_h__
+#ifndef execution_flow_h__
+#define execution_flow_h__
 
 #include <cstdint>
 #include <vector>
@@ -88,6 +88,6 @@ struct PortUsageFlow
 
 ////////////////////////////////////////////////////////////////////////////////
 
-bool llvm_mca_flow_create(const void *pAssembledBytes, const size_t assembledBytesLength, PortUsageFlow *pFlow);
+bool execution_flow_create(const void *pAssembledBytes, const size_t assembledBytesLength, PortUsageFlow *pFlow);
 
-#endif // llvm_mca_flow_h__
+#endif // execution_flow_h__
