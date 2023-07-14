@@ -62,13 +62,21 @@ struct ResourcePressureInfo
 
 struct InstructionInfo
 {
-  size_t instructionIndex, instructionByteOffset, clockDispatched, clockExecuting, clockExecuted, clockRetired;
+  size_t instructionIndex, instructionByteOffset, clockPending, clockReady, clockIssued, clockExecuted, clockDispatched, clockRetired, uOpCount;
   std::vector<ResourcePressureInfo> usage;
   std::vector<std::string> bottleneckInfo;
+  std::vector<size_t> physicalRegistersObstructed;
 
   inline InstructionInfo(const size_t instructionIndex, const size_t instructionByteOffset) :
     instructionIndex(instructionIndex),
-    instructionByteOffset(instructionByteOffset)
+    instructionByteOffset(instructionByteOffset),
+    clockPending(0),
+    clockReady(0),
+    clockIssued(0),
+    clockExecuted(0),
+    clockDispatched(0),
+    clockRetired(0),
+    uOpCount(0)
   { }
 };
 

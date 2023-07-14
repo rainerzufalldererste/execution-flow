@@ -46,6 +46,7 @@
 #include "llvm/MC/MCTargetOptionsCommandFlags.h"
 #include "llvm/MC/MCDisassembler/MCDisassembler.h"
 #include "llvm/MC/TargetRegistry.h"
+#include "llvm/MCA/Context.h"
 #include "llvm/MCA/CustomBehaviour.h"
 #include "llvm/MCA/HWEventListener.h"
 #include "llvm/MCA/InstrBuilder.h"
@@ -57,42 +58,25 @@
 
 ////////////////////////////////////////////////////////////////////////////////
 
-class FetchStage final : public llvm::mca::Stage
-{
-private:
-  llvm::mca::InstRef lastInstruction;
-  llvm::mca::SourceMgr *pSource; // initialized in the constructor.
-  std::queue<std::unique_ptr<llvm::mca::Instruction>> referencedInstructions;
-
-  llvm::Error iterateSource();
-
-public:
-  inline FetchStage(llvm::mca::SourceMgr *pSource) : pSource(pSource) {}
-
-  bool isAvailable(const llvm::mca::InstRef &IR) const override;
-  bool hasWorkToComplete() const override;
-  llvm::Error execute(llvm::mca::InstRef &IR) override;
-  llvm::Error cycleStart() override;
-  llvm::Error cycleResume() override;
-  llvm::Error cycleEnd() override;
-};
-
-////////////////////////////////////////////////////////////////////////////////
-
 class FlowView final : public llvm::mca::HWEventListener
 {
 private:
   PortUsageFlow *pFlow; // initialized in the constructor.
-  size_t instructionIndex = 0;
+  size_t instructionClock = 0;
+  llvm::SmallDenseMap<std::pair<unsigned, unsigned>, size_t, 32U> llvmResource2ListedResourceIdx;
+  bool hasFirstObservedInstructionClock = false;
+  size_t firstObservedInstructionClock = 0;
 
 public:
   inline FlowView(PortUsageFlow *pFlow) : pFlow(pFlow) {}
 
-  inline void onCycleEnd() override { instructionIndex++; }
+  inline void onCycleEnd() override { instructionClock++; }
 
   void onEvent(const llvm::mca::HWInstructionEvent &evnt) override;
   void onEvent(const llvm::mca::HWStallEvent &evnt) override;
   void onEvent(const llvm::mca::HWPressureEvent &evnt) override;
+
+  void addLLVMResourceToPortIndexLookup(const std::pair<std::pair<size_t, size_t>, size_t> &keyValuePair);
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -203,23 +187,35 @@ bool llvm_mca_flow_create(const void *pAssembledBytes, const size_t assembledByt
     postProcess.postProcessInstruction(mcaInstr.get(), instr);
     mcaInstructions.emplace_back(std::move(mcaInstr.get()));
   }
-
   // Create source for the `Pipeline` & `HWEventListener`.
   llvm::mca::CircularSourceMgr source(mcaInstructions, 2);
 
+  // Create custom behaviour.
+  std::unique_ptr<llvm::mca::CustomBehaviour> customBehaviour(target->createCustomBehaviour(*subtargetInfo, source, *instructionInfo));
+
+  if (customBehaviour == nullptr)
+    customBehaviour = std::make_unique<llvm::mca::CustomBehaviour>(*subtargetInfo, source, *instructionInfo);
+
+  // Create MCA context.
+  llvm::mca::Context mcaContext(*registerInfo, *subtargetInfo);
+
+  llvm::mca::PipelineOptions pipelineOptions(0, 0, 0, 0, 0, 0, true, true); // this seems very wrong, but that's what llvm-mca is doing and I don't see a way of retrieving the information from the `subtargetInfo`.
+
   // Create and fill the pipeline with the source.
-  std::unique_ptr<llvm::mca::Pipeline> pipeline = std::make_unique<llvm::mca::Pipeline>();
-  pipeline->appendStage(std::make_unique<FetchStage>(&source));
+  std::unique_ptr<llvm::mca::Pipeline> pipeline(mcaContext.createDefaultPipeline(pipelineOptions, source, *customBehaviour));
 
   const llvm::MCSchedModel &schedulerModel = subtargetInfo->getSchedModel();
-  pipeline->appendStage(std::make_unique<llvm::mca::InstructionTables>(schedulerModel));
+
+  // Create event handler to observe simulated hardware events.
+  FlowView flowView(&flow);
+  pipeline->addEventListener(&flowView);
 
   // Get Stages from Scheduler model.
   {
     const size_t resourceTypeCount = schedulerModel.getNumProcResourceKinds();
     size_t validTypeIndex = (size_t)-1;
 
-    for (uint32_t i = 1; i < resourceTypeCount; i++) // index 0 appears to be used as `null`-index.
+    for (size_t i = 1; i < resourceTypeCount; i++) // index 0 appears to be used as `null`-index.
     {
       const llvm::MCProcResourceDesc *pResource = schedulerModel.getProcResource(i);
       const size_t perResourcePortCount = pResource->NumUnits;
@@ -229,24 +225,24 @@ bool llvm_mca_flow_create(const void *pAssembledBytes, const size_t assembledByt
 
       ++validTypeIndex;
 
-      for (uint32_t j = 0; j < perResourcePortCount; j++)
+      for (size_t j = 0; j < perResourcePortCount; j++)
       {
         std::string name = pResource->Name;
 
         if (perResourcePortCount > 1)
           name = name + " " + std::to_string(j + 1);
 
+        flowView.addLLVMResourceToPortIndexLookup({ {i, j}, { flow.ports.size() }});
         flow.ports.emplace_back(validTypeIndex, j, name);
       }
     }
   }
 
-  // Create event handler to observe simulated hardware events.
-  FlowView flowView(&flow);
-  pipeline->addEventListener(&flowView);
-
   // Run the pipeline.
-  pipeline->run();
+  llvm::Expected<unsigned> cycles = pipeline->run();
+
+  if (!cycles)
+    result = false;
 
   *pFlow = std::move(flow);
 
@@ -255,102 +251,87 @@ bool llvm_mca_flow_create(const void *pAssembledBytes, const size_t assembledByt
 
 ////////////////////////////////////////////////////////////////////////////////
 
-llvm::Error FetchStage::iterateSource()
-{
-  assert(!lastInstruction && "The last instruction should've been invalidated by now");
-
-  if (!pSource->hasNext())
-  {
-    if (pSource->isEnd())
-      return llvm::make_error<llvm::mca::InstStreamPause>();
-
-    return llvm::ErrorSuccess();
-  }
-
-  // Retrieve next instruction.
-  llvm::mca::SourceRef nextInstruction = pSource->peekNext();
-
-  // Add to referenced instructions and make it the active instruction.
-  std::unique_ptr<llvm::mca::Instruction> referencableInstruction = std::make_unique<llvm::mca::Instruction>(nextInstruction.second);
-  lastInstruction = llvm::mca::InstRef(nextInstruction.first, referencableInstruction.get());
-  referencedInstructions.push(std::move(referencableInstruction));
-  
-  // Move the source forward.
-  pSource->updateNext();
-  
-  return llvm::ErrorSuccess();
-}
-
-bool FetchStage::isAvailable(const llvm::mca::InstRef &instruction) const
-{
-  (void)instruction; // we don't need this, as we're merely imitating the instruction fetching procedure.
-
-  if (lastInstruction)
-    return checkNextStage(lastInstruction);
-
-  return false;
-}
-
-bool FetchStage::hasWorkToComplete() const
-{
-  if (lastInstruction)
-    return true;
-
-  return !pSource->isEnd();
-}
-
-llvm::Error FetchStage::execute(llvm::mca::InstRef &instruction)
-{
-  (void)instruction; // we don't need this, as we're merely imitating the instruction fetching procedure.
-
-  assert(!lastInstruction && "No Instruction active.");
-
-  llvm::Error result = moveToTheNextStage(lastInstruction);
-
-  if (result.success()) // if that was successful(!)
-    return std::move(result); // return the success (rather than making a new one).
-
-  instruction.invalidate();
-
-  return iterateSource();
-}
-
-llvm::Error FetchStage::cycleStart()
-{
-  if (!lastInstruction)
-    return iterateSource();
-  else
-    return llvm::ErrorSuccess();
-}
-
-llvm::Error FetchStage::cycleResume()
-{
-  assert(!lastInstruction && "No Instruction active.");
-
-  return iterateSource();
-}
-
-llvm::Error FetchStage::cycleEnd()
-{
-  // Remove all instructions that aren't referenced anymore.
-  while (referencedInstructions.size())
-  {
-    const auto &first = referencedInstructions.front();
-
-    if (!first->isRetired())
-      break;
-
-    referencedInstructions.pop();
-  }
-
-  return llvm::ErrorSuccess();
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
 void FlowView::onEvent(const llvm::mca::HWInstructionEvent &evnt)
 {
-  (void)evnt;
+  const size_t instructionCount = pFlow->perClockInstruction.size();
+  assert(instructionCount > 0 && "There should already be a reference to all instructions in this vector.");
+
+  const size_t instructionIndex = evnt.IR.getSourceIndex() % instructionCount;
+  const size_t runIndex = evnt.IR.getSourceIndex() / instructionCount;
+
+  InstructionInfo &instructionInfo = pFlow->perClockInstruction[instructionIndex];
+
+  if (runIndex == 1) // since we're assuming this is a loop, we'll take the second iteration, to make sure latencies are carried over correctly.
+  {
+    if (!hasFirstObservedInstructionClock)
+    {
+      hasFirstObservedInstructionClock = true;
+      firstObservedInstructionClock = instructionClock;
+    }
+
+    switch (evnt.Type)
+    {
+    case llvm::mca::HWInstructionEvent::Ready:
+    {
+      instructionInfo.clockReady = instructionClock - firstObservedInstructionClock;
+      break;
+    }
+
+    case llvm::mca::HWInstructionEvent::Dispatched:
+    {
+      const auto &dispatcheddEvent = static_cast<const llvm::mca::HWInstructionDispatchedEvent &>(evnt);
+
+      instructionInfo.clockDispatched = instructionClock - firstObservedInstructionClock;
+      instructionInfo.uOpCount = dispatcheddEvent.MicroOpcodes;
+
+      for (uint32_t reg : dispatcheddEvent.UsedPhysRegs)
+        instructionInfo.physicalRegistersObstructed.push_back((size_t)reg);
+
+      break;
+    }
+
+    case llvm::mca::HWInstructionEvent::Executed:
+    {
+      instructionInfo.clockExecuted = instructionClock - firstObservedInstructionClock;
+      break;
+    }
+
+    case llvm::mca::HWInstructionEvent::Pending:
+    {
+      instructionInfo.clockPending = instructionClock - firstObservedInstructionClock;
+      break;
+    }
+
+    case llvm::mca::HWInstructionEvent::Retired:
+    {
+      const auto &retiredEvent = static_cast<const llvm::mca::HWInstructionRetiredEvent &>(evnt);
+      (void)retiredEvent; // seems to only contain the same registers that the dispatched event already contained, marking them as free.
+
+      instructionInfo.clockRetired = instructionClock - firstObservedInstructionClock;
+
+      break;
+    }
+
+    case llvm::mca::HWInstructionEvent::Issued:
+    {
+      const auto &issuedEvent = static_cast<const llvm::mca::HWInstructionIssuedEvent &>(evnt);
+
+      instructionInfo.clockIssued = instructionClock - firstObservedInstructionClock;
+
+      for (const auto &resourceUsage : issuedEvent.UsedResources)
+      {
+        if (!llvmResource2ListedResourceIdx.contains(resourceUsage.first))
+          continue;
+
+        const size_t portIndex = llvmResource2ListedResourceIdx[resourceUsage.first];
+
+        instructionInfo.usage.push_back(ResourcePressureInfo(portIndex, (double)resourceUsage.second));
+      }
+
+      break;
+    }
+    }
+  }
 }
 
 void FlowView::onEvent(const llvm::mca::HWStallEvent &evnt)
@@ -361,4 +342,9 @@ void FlowView::onEvent(const llvm::mca::HWStallEvent &evnt)
 void FlowView::onEvent(const llvm::mca::HWPressureEvent &evnt)
 {
   (void)evnt;
+}
+
+void FlowView::addLLVMResourceToPortIndexLookup(const std::pair<std::pair<size_t, size_t>, size_t> &keyValuePair)
+{
+  llvmResource2ListedResourceIdx.insert(keyValuePair);
 }
