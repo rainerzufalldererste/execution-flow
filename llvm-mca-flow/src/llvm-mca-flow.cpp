@@ -36,6 +36,7 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/TargetParser/Host.h"
+#include "llvm/TargetParser/SubtargetFeature.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCInstBuilder.h"
@@ -96,10 +97,14 @@ public:
 
 ////////////////////////////////////////////////////////////////////////////////
 
+#pragma optimize ("", off)
+
 bool llvm_mca_flow_create(const void *pAssembledBytes, const size_t assembledBytesLength, PortUsageFlow *pFlow)
 {
   if (pFlow == nullptr)
     return false;
+
+  static llvm::mc::RegisterMCTargetOptionsFlags targetOptionFlags;
 
   LLVMInitializeX86TargetInfo();
   LLVMInitializeX86TargetMC();
@@ -122,7 +127,7 @@ bool llvm_mca_flow_create(const void *pAssembledBytes, const size_t assembledByt
   llvm::MCTargetOptions targetOptions(llvm::mc::InitMCTargetOptionsFromFlags());
   std::unique_ptr<llvm::MCRegisterInfo> registerInfo(target->createMCRegInfo(targetTriple.str()));
   std::unique_ptr<llvm::MCAsmInfo> asmInfo(target->createMCAsmInfo(*registerInfo, targetTriple.str(), targetOptions));
-  std::unique_ptr<llvm::MCSubtargetInfo> subtargetInfo(target->createMCSubtargetInfo(targetTriple.str(), "", ""));
+  std::unique_ptr<llvm::MCSubtargetInfo> subtargetInfo(target->createMCSubtargetInfo(targetTriple.str(), llvm::sys::getHostCPUName(), ""));
 
   // Create Machine Code Context from the triple.
   llvm::MCContext context(targetTriple, asmInfo.get(), registerInfo.get(), subtargetInfo.get());
@@ -174,6 +179,9 @@ bool llvm_mca_flow_create(const void *pAssembledBytes, const size_t assembledByt
   llvm::mca::InstrPostProcess postProcess(*subtargetInfo, *instructionInfo);
   std::unique_ptr<llvm::mca::InstrumentManager> instrumentManager(target->createInstrumentManager(*subtargetInfo, *instructionInfo));
 
+  if (instrumentManager == nullptr)
+    instrumentManager = std::make_unique<llvm::mca::InstrumentManager>(*subtargetInfo, *instructionInfo);
+
   llvm::mca::InstrPostProcess instructionPostProcess(*subtargetInfo, *instructionInfo);
   llvm::mca::InstrBuilder instructionBuilder(*subtargetInfo, *instructionInfo, *registerInfo, instructionAnalysis.get(), *instrumentManager);
   
@@ -200,7 +208,7 @@ bool llvm_mca_flow_create(const void *pAssembledBytes, const size_t assembledByt
   llvm::mca::CircularSourceMgr source(mcaInstructions, 2);
 
   // Create and fill the pipeline with the source.
-  std::unique_ptr<llvm::mca::Pipeline> pipeline;
+  std::unique_ptr<llvm::mca::Pipeline> pipeline = std::make_unique<llvm::mca::Pipeline>();
   pipeline->appendStage(std::make_unique<FetchStage>(&source));
 
   const llvm::MCSchedModel &schedulerModel = subtargetInfo->getSchedModel();
@@ -211,7 +219,7 @@ bool llvm_mca_flow_create(const void *pAssembledBytes, const size_t assembledByt
     const size_t resourceTypeCount = schedulerModel.getNumProcResourceKinds();
     size_t validTypeIndex = (size_t)-1;
 
-    for (size_t i = 1; i < resourceTypeCount; i++) // index 0 appears to be used as `null`-index.
+    for (uint32_t i = 1; i < resourceTypeCount; i++) // index 0 appears to be used as `null`-index.
     {
       const llvm::MCProcResourceDesc *pResource = schedulerModel.getProcResource(i);
       const size_t perResourcePortCount = pResource->NumUnits;
@@ -221,12 +229,12 @@ bool llvm_mca_flow_create(const void *pAssembledBytes, const size_t assembledByt
 
       ++validTypeIndex;
 
-      for (size_t j = 0; j < perResourcePortCount; j++)
+      for (uint32_t j = 0; j < perResourcePortCount; j++)
       {
         std::string name = pResource->Name;
 
         if (perResourcePortCount > 1)
-          name += " " + (j + 1);
+          name = name + " " + std::to_string(j + 1);
 
         flow.ports.emplace_back(validTypeIndex, j, name);
       }
