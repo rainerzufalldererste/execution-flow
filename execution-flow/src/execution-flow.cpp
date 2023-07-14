@@ -101,23 +101,23 @@ bool execution_flow_create(const void *pAssembledBytes, const size_t assembledBy
 
   // Look up the target triple to get a hold of the target.
   std::string errorString;
-  std::unique_ptr<const llvm::Target> target(llvm::TargetRegistry::lookupTarget(targetTriple.str(), errorString));
+  const llvm::Target *pTarget(llvm::TargetRegistry::lookupTarget(targetTriple.str(), errorString));
 
   // Did we get one? (I sure hope so!)
-  if (target == nullptr)
+  if (pTarget == nullptr)
     return false;
 
   // Create everything the context wants.
   llvm::MCTargetOptions targetOptions(llvm::mc::InitMCTargetOptionsFromFlags());
-  std::unique_ptr<llvm::MCRegisterInfo> registerInfo(target->createMCRegInfo(targetTriple.str()));
-  std::unique_ptr<llvm::MCAsmInfo> asmInfo(target->createMCAsmInfo(*registerInfo, targetTriple.str(), targetOptions));
-  std::unique_ptr<llvm::MCSubtargetInfo> subtargetInfo(target->createMCSubtargetInfo(targetTriple.str(), llvm::sys::getHostCPUName(), ""));
+  std::unique_ptr<llvm::MCRegisterInfo> registerInfo(pTarget->createMCRegInfo(targetTriple.str()));
+  std::unique_ptr<llvm::MCAsmInfo> asmInfo(pTarget->createMCAsmInfo(*registerInfo, targetTriple.str(), targetOptions));
+  std::unique_ptr<llvm::MCSubtargetInfo> subtargetInfo(pTarget->createMCSubtargetInfo(targetTriple.str(), llvm::sys::getHostCPUName(), ""));
 
   // Create Machine Code Context from the triple.
   llvm::MCContext context(targetTriple, asmInfo.get(), registerInfo.get(), subtargetInfo.get());
 
   // Get the disassembler.
-  std::unique_ptr<llvm::MCDisassembler> disasm(target->createMCDisassembler(*subtargetInfo, context));
+  std::unique_ptr<llvm::MCDisassembler> disasm(pTarget->createMCDisassembler(*subtargetInfo, context));
 
   // Construct `ArrayRef` to feed the disassembler with.
   llvm::ArrayRef<uint8_t> bytes(reinterpret_cast<const uint8_t *>(pAssembledBytes), assembledBytesLength);
@@ -158,10 +158,10 @@ bool execution_flow_create(const void *pAssembledBytes, const size_t assembledBy
   }
 
   // Prepare everything for the instruction builder in order to retrieve `llvm::mca::Instruction`s from the `llvm::Inst`s.
-  std::unique_ptr<llvm::MCInstrInfo> instructionInfo(target->createMCInstrInfo());
-  std::unique_ptr<llvm::MCInstrAnalysis> instructionAnalysis(target->createMCInstrAnalysis(instructionInfo.get()));
+  std::unique_ptr<llvm::MCInstrInfo> instructionInfo(pTarget->createMCInstrInfo());
+  std::unique_ptr<llvm::MCInstrAnalysis> instructionAnalysis(pTarget->createMCInstrAnalysis(instructionInfo.get()));
   llvm::mca::InstrPostProcess postProcess(*subtargetInfo, *instructionInfo);
-  std::unique_ptr<llvm::mca::InstrumentManager> instrumentManager(target->createInstrumentManager(*subtargetInfo, *instructionInfo));
+  std::unique_ptr<llvm::mca::InstrumentManager> instrumentManager(pTarget->createInstrumentManager(*subtargetInfo, *instructionInfo));
 
   if (instrumentManager == nullptr)
     instrumentManager = std::make_unique<llvm::mca::InstrumentManager>(*subtargetInfo, *instructionInfo);
@@ -187,11 +187,12 @@ bool execution_flow_create(const void *pAssembledBytes, const size_t assembledBy
     postProcess.postProcessInstruction(mcaInstr.get(), instr);
     mcaInstructions.emplace_back(std::move(mcaInstr.get()));
   }
+
   // Create source for the `Pipeline` & `HWEventListener`.
   llvm::mca::CircularSourceMgr source(mcaInstructions, 2);
 
   // Create custom behaviour.
-  std::unique_ptr<llvm::mca::CustomBehaviour> customBehaviour(target->createCustomBehaviour(*subtargetInfo, source, *instructionInfo));
+  std::unique_ptr<llvm::mca::CustomBehaviour> customBehaviour(pTarget->createCustomBehaviour(*subtargetInfo, source, *instructionInfo));
 
   if (customBehaviour == nullptr)
     customBehaviour = std::make_unique<llvm::mca::CustomBehaviour>(*subtargetInfo, source, *instructionInfo);
@@ -199,12 +200,11 @@ bool execution_flow_create(const void *pAssembledBytes, const size_t assembledBy
   // Create MCA context.
   llvm::mca::Context mcaContext(*registerInfo, *subtargetInfo);
 
-  llvm::mca::PipelineOptions pipelineOptions(0, 0, 0, 0, 0, 0, true, true); // this seems very wrong, but that's what llvm-mca is doing and I don't see a way of retrieving the information from the `subtargetInfo`.
+  const llvm::MCSchedModel &schedulerModel = subtargetInfo->getSchedModel();
+  llvm::mca::PipelineOptions pipelineOptions(0, 0, 0, 0, 0, 0, true, true); // this seems very wrong, but that's what llvm-mca is doing and I don't see a way of retrieving the information from the `subtargetInfo` or `schedulerModel`.
 
   // Create and fill the pipeline with the source.
   std::unique_ptr<llvm::mca::Pipeline> pipeline(mcaContext.createDefaultPipeline(pipelineOptions, source, *customBehaviour));
-
-  const llvm::MCSchedModel &schedulerModel = subtargetInfo->getSchedModel();
 
   // Create event handler to observe simulated hardware events.
   FlowView flowView(&flow);
@@ -235,6 +235,21 @@ bool execution_flow_create(const void *pAssembledBytes, const size_t assembledBy
         flowView.addLLVMResourceToPortIndexLookup({ {i, j}, { flow.ports.size() }});
         flow.ports.emplace_back(validTypeIndex, j, name);
       }
+    }
+  }
+
+  // Get Register Types and Counts from scheduler extra info.
+  {
+    const llvm::MCExtraProcessorInfo &extraInfo = schedulerModel.getExtraProcessorInfo();
+    
+    for (size_t i = 0; i < extraInfo.NumRegisterFiles; i++)
+    {
+      const llvm::MCRegisterFileDesc &registerFile = extraInfo.RegisterFiles[i];
+
+      if (registerFile.NumPhysRegs == 0)
+        continue;
+
+      flow.hardwareRegisters.emplace_back(registerFile.Name, registerFile.NumPhysRegs);
     }
   }
 

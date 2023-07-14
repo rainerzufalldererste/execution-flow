@@ -60,6 +60,17 @@ struct ResourcePressureInfo
   { }
 };
 
+struct HardwareRegisterCount
+{
+  std::string registerTypeName;
+  size_t count;
+
+  inline HardwareRegisterCount(const std::string type, const size_t count) :
+    registerTypeName(type),
+    count(count)
+  { }
+};
+
 struct InstructionInfo
 {
   size_t instructionIndex, instructionByteOffset, clockPending, clockReady, clockIssued, clockExecuted, clockDispatched, clockRetired, uOpCount;
@@ -83,6 +94,7 @@ struct InstructionInfo
 struct PortUsageFlow
 {
   std::vector<ResourceInfo> ports;
+  std::vector<HardwareRegisterCount> hardwareRegisters;
   std::vector<InstructionInfo> perClockInstruction;
 };
 
