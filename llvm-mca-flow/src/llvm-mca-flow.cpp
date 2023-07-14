@@ -224,7 +224,7 @@ bool llvm_mca_flow_create(const void *pAssembledBytes, const size_t assembledByt
       const llvm::MCProcResourceDesc *pResource = schedulerModel.getProcResource(i);
       const size_t perResourcePortCount = pResource->NumUnits;
 
-      if (perResourcePortCount == 0)
+      if (perResourcePortCount == 0 || pResource->SubUnitsIdxBegin != nullptr) // if `SubUnitsIdxBegin` isn't `nullptr`, there'll be another resource that doesn't indicate *all* of the resources, but the sub-resources individually.
         continue;
 
       ++validTypeIndex;
@@ -248,7 +248,7 @@ bool llvm_mca_flow_create(const void *pAssembledBytes, const size_t assembledByt
   // Run the pipeline.
   pipeline->run();
 
-  *pFlow = flow;
+  *pFlow = std::move(flow);
 
   return result;
 }
@@ -305,10 +305,10 @@ llvm::Error FetchStage::execute(llvm::mca::InstRef &instruction)
 
   assert(!lastInstruction && "No Instruction active.");
 
-  llvm::Error result = moveToTheNextStage(instruction);
+  llvm::Error result = moveToTheNextStage(lastInstruction);
 
-  if (!result.success())
-    return std::move(result);
+  if (result.success()) // if that was successful(!)
+    return std::move(result); // return the success (rather than making a new one).
 
   instruction.invalidate();
 
