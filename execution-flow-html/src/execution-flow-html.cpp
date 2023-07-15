@@ -45,6 +45,8 @@
 
 ////////////////////////////////////////////////////////////////////////////////
 
+#pragma optimize ("", off)
+
 int main(int argc, char **pArgv)
 {
   if (argc < 3)
@@ -119,17 +121,19 @@ int main(int argc, char **pArgv)
                 --colorA: hsl(calc(var(--idx) * 24.5deg) 50% 50%);
                 --colorB: hsl(calc(var(--idx) * 24.5deg + 5.2deg) 50% 70%);
                 content: ' ';
-                width: 4pt;
+                width: 10pt;
                 height: calc(20pt * var(--len));
-                top: calc(var(--off) * 20pt);
+                margin-top: calc(var(--off) * 20pt);
                 background: linear-gradient(45deg, var(--colorA), var(--colorB));
-                border-radius: 10pt;
-                display: block;
-                margin: 0;
+                border-radius: 62pt;
+                display: inline-block;
                 padding: 0;
                 overflow: hidden;
                 border: 1pt solid var(--colorA);
                 position: absolute;
+                mix-blend-mode: screen;
+                margin-left: calc(var(--lane) * 12pt);
+                float: left;
             }
 
             .inst_base {
@@ -138,38 +142,31 @@ int main(int argc, char **pArgv)
             }
 
             .inst {
-                top: calc(20pt * var(--s));
+                margin-top: 0;
                 width: 100%;
                 height: calc(20pt * var(--l));
-                opacity: 40%;
+                opacity: 100%;
+                background-color: #000;
             }
 
             .inst.dispatched {
-                background-color: #111;
-                opacity: 90%;
+                margin-top: calc(20pt * var(--s));
             }
 
             .inst.pending {
-                background-color: #111;
-                opacity: 70%;
+              /* empty */
             }
 
             .inst.ready {
-                background-color: #0084ff;
-                opacity: 30%;
+                opacity: 85%;
             }
 
-            .inst.issued {
-                background-color: #eeff00;
+            .inst.executing {
+                opacity: 0%;
             }
 
-            .inst.executed {
-                background-color: #ffd8e2;
-            }
-
-            .inst.retired {
-                background-color: #222222;
-                opacity: 90%;
+            .inst.retiring {
+              /* empty */
             }
         </style>
         <table class="flow">
@@ -187,6 +184,8 @@ int main(int argc, char **pArgv)
     {
       fputs("<td>\n", pOutFile);
 
+      std::vector<std::vector<bool>> subLanes;
+
       for (const auto &_inst : flow.instructionExecutionInfo)
       {
         for (const auto &_port : _inst.usage)
@@ -194,13 +193,58 @@ int main(int argc, char **pArgv)
           if (_port.resourceIndex != i)
             continue;
 
-          fprintf(pOutFile, "<div class=\"laneinst\" style=\"--off: %" PRIu64 "; --len: %" PRIu64 "; --idx: %" PRIu64 "\"><div class=\"inst_base\">\n", _inst.clockDispatched, _inst.clockRetired - _inst.clockPending, _inst.instructionIndex);
-          fprintf(pOutFile, "\t<div class=\"inst dispatched\" style=\"--s: %" PRIu64 "; --l: %" PRIu64 ";\"></div>\n", (size_t)0, _inst.clockReady - _inst.clockDispatched);
-          fprintf(pOutFile, "\t<div class=\"inst pending\" style=\"--s: %" PRIu64 "; --l: %" PRIu64 ";\"></div>\n", _inst.clockDispatched, _inst.clockReady - _inst.clockPending);
-          fprintf(pOutFile, "\t<div class=\"inst ready\" style=\"--s: %" PRIu64 "; --l: %" PRIu64 ";\"></div>\n", _inst.clockReady, _inst.clockIssued - _inst.clockReady);
-          fprintf(pOutFile, "\t<div class=\"inst issued\" style=\"--s: %" PRIu64 "; --l: %" PRIu64 ";\"></div>\n", _inst.clockIssued, _inst.clockExecuted - _inst.clockIssued);
-          fprintf(pOutFile, "\t<div class=\"inst executed\" style=\"--s: %" PRIu64 "; --l: %" PRIu64 ";\"></div>\n", _inst.clockExecuted, (size_t)0);
-          fprintf(pOutFile, "\t<div class=\"inst retired\" style=\"--s: %" PRIu64 "; --l: %" PRIu64 ";\"></div>\n", (size_t)_inst.clockExecuted, _inst.clockRetired - _inst.clockExecuted);
+          const size_t start = std::min(_inst.clockIssued, _inst.clockIssued - 1);
+          const size_t end = _inst.clockExecuted + 1;
+
+          size_t lane = (size_t)-1;
+
+          for (size_t l = 0; l < subLanes.size(); l++)
+          {
+            if (subLanes[l].size() <= start)
+            {
+              lane = l;
+              break;
+            }
+            else
+            {
+              bool full = false;
+
+              const size_t target = std::min(subLanes[l].size(), end + 1);
+
+              for (size_t j = start; j < target; j++)
+                full |= subLanes[l][j];
+
+              if (!full)
+              {
+                lane = l;
+                break;
+              }
+            }
+          }
+
+          if (lane == (size_t)-1)
+          {
+            lane = subLanes.size();
+            subLanes.emplace_back();
+          }
+
+          // Fill Space.
+          {
+            subLanes[lane].reserve(end + 1);
+
+            while (subLanes[lane].size() < end)
+              subLanes[lane].emplace_back(false);
+
+            for (size_t j = start; j < end; j++)
+              subLanes[lane][j] = true;
+          }
+
+          fprintf(pOutFile, "<div class=\"laneinst\" style=\"--off: %" PRIu64 "; --len: %" PRIu64 "; --idx: %" PRIu64 "; --lane: %" PRIu64 ";\"><div class=\"inst_base\">\n", _inst.clockIssued, _inst.clockExecuted - _inst.clockIssued, _inst.instructionIndex, lane);
+          fprintf(pOutFile, "\t<div class=\"inst dispatched\" style=\"--s: %" PRIi64 "; --l: %" PRIu64 ";\"></div>\n", (int64_t)_inst.clockDispatched - _inst.clockIssued, _inst.clockReady - _inst.clockDispatched);
+          fprintf(pOutFile, "\t<div class=\"inst pending\" style=\"execution--l: %" PRIu64 ";\"></div>\n", _inst.clockIssued - _inst.clockPending);
+          fprintf(pOutFile, "\t<div class=\"inst ready\" style=\"execution--l: %" PRIu64 ";\"></div>\n", _inst.clockIssued - _inst.clockReady);
+          fprintf(pOutFile, "\t<div class=\"inst executing\" style=\"execution--l: %" PRIu64 ";\"></div>\n", _inst.clockExecuted - _inst.clockIssued);
+          fprintf(pOutFile, "\t<div class=\"inst retiring\" style=\"execution--l: %" PRIu64 ";\"></div>\n", _inst.clockRetired - _inst.clockExecuted);
 
           fputs("</div></div>\n", pOutFile);
         }
