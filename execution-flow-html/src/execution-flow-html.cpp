@@ -116,24 +116,34 @@ int main(int argc, char **pArgv)
             table.flow {
                 width: 100%;
             }
+
+            table.flow tr {
+              line-break: anywhere;
+              text-align: justify;
+            }
             
             .laneinst {
-                --colorA: hsl(calc(var(--idx) * 24.5deg) 50% 50%);
-                --colorB: hsl(calc(var(--idx) * 24.5deg + 5.2deg) 50% 70%);
+                --colorA: hsl(calc(var(--lane) * 0.41 * 360deg) 50% 50%);
+                --colorB: hsl(calc(var(--lane) * 0.41 * 360deg + 50deg) 30% 40%);
                 content: ' ';
-                width: 10pt;
+                width: 20pt;
                 height: calc(20pt * var(--len));
-                margin-top: calc(var(--off) * 20pt);
-                background: linear-gradient(45deg, var(--colorA), var(--colorB));
-                border-radius: 62pt;
-                display: inline-block;
+                top: calc(var(--off) * 20pt + 50pt);
+                background: linear-gradient(180deg, var(--colorA), var(--colorB));
+                border-radius: 10pt;
+                display: block;
                 padding: 0;
                 overflow: hidden;
-                border: 1pt solid var(--colorA);
                 position: absolute;
                 mix-blend-mode: screen;
-                margin-left: calc(var(--lane) * 12pt);
-                float: left;
+                border: 1pt solid transparent;
+                opacity: 30%;
+            }
+
+            .laneinst.selected {  
+                border: 1pt solid var(--colorA);
+                opacity: 100%;
+                z-index: 10;
             }
 
             .inst_base {
@@ -141,32 +151,41 @@ int main(int argc, char **pArgv)
                 height: 100%;
             }
 
-            .inst {
-                margin-top: 0;
-                width: 100%;
-                height: calc(20pt * var(--l));
-                opacity: 100%;
-                background-color: #000;
-            }
-
-            .inst.dispatched {
-                margin-top: calc(20pt * var(--s));
-            }
-
-            .inst.pending {
-              /* empty */
-            }
-
-            .inst.ready {
-                opacity: 85%;
-            }
-
-            .inst.executing {
+            .instex {
                 opacity: 0%;
             }
 
+            .instex.selected {
+                opacity: 100%;
+            }
+            
+            .inst {
+              position: absolute;
+              width: 4pt;
+              top: calc(var(--s) * 20pt + 50pt);
+              height: calc(var(--l) * 20pt);
+              border-radius: 5pt;
+              margin-left: 8pt;
+            }
+
+            .inst.dispatched {
+              background: #ffffff20;
+            }
+
+            .inst.pending {
+              background: #51abd750;
+            }
+
+            .inst.ready {
+              background: #77ecffaa;
+            }
+
+            .inst.executing {
+              background: #fff;
+            }
+
             .inst.retiring {
-              /* empty */
+              background: #ffffff05;
             }
         </style>
         <table class="flow">
@@ -184,8 +203,6 @@ int main(int argc, char **pArgv)
     {
       fputs("<td>\n", pOutFile);
 
-      std::vector<std::vector<bool>> subLanes;
-
       for (const auto &_inst : flow.instructionExecutionInfo)
       {
         for (const auto &_port : _inst.usage)
@@ -193,60 +210,14 @@ int main(int argc, char **pArgv)
           if (_port.resourceIndex != i)
             continue;
 
-          const size_t start = std::min(_inst.clockIssued, _inst.clockIssued - 1);
-          const size_t end = _inst.clockExecuted + 1;
+          fprintf(pOutFile, "<div class=\"laneinst\" idx=\"%" PRIu64 "\" style=\"--off: %" PRIu64 "; --len: %" PRIu64 "; --idx: %" PRIu64 "; --lane: %" PRIu64 ";\"></div><div class=\"instex\" idx=\"%" PRIu64 "\">\n", i, _inst.clockIssued, _inst.clockExecuted - _inst.clockIssued, _inst.instructionIndex, i, i);
+          fprintf(pOutFile, "\t<div class=\"inst dispatched\" style=\"--s: %" PRIu64 "; --l: %" PRIu64 ";\"></div>\n", _inst.clockDispatched, _inst.clockPending - _inst.clockDispatched);
+          fprintf(pOutFile, "\t<div class=\"inst pending\" style=\"--s: %" PRIu64 "; --l: %" PRIu64 ";\"></div>\n", _inst.clockPending, _inst.clockReady - _inst.clockPending);
+          fprintf(pOutFile, "\t<div class=\"inst ready\" style=\"--s: %" PRIu64 "; --l: %" PRIu64 ";\"></div>\n", _inst.clockReady, _inst.clockIssued - _inst.clockReady);
+          fprintf(pOutFile, "\t<div class=\"inst executing\" style=\"--s: %" PRIu64 "; --l: %" PRIu64 ";\"></div>\n", _inst.clockIssued, _inst.clockExecuted - _inst.clockIssued);
+          fprintf(pOutFile, "\t<div class=\"inst retiring\" style=\"--s: %" PRIu64 "; --l: %" PRIu64 ";\"></div>\n", _inst.clockExecuted, _inst.clockRetired - _inst.clockExecuted);
 
-          size_t lane = (size_t)-1;
-
-          for (size_t l = 0; l < subLanes.size(); l++)
-          {
-            if (subLanes[l].size() <= start)
-            {
-              lane = l;
-              break;
-            }
-            else
-            {
-              bool full = false;
-
-              const size_t target = std::min(subLanes[l].size(), end + 1);
-
-              for (size_t j = start; j < target; j++)
-                full |= subLanes[l][j];
-
-              if (!full)
-              {
-                lane = l;
-                break;
-              }
-            }
-          }
-
-          if (lane == (size_t)-1)
-          {
-            lane = subLanes.size();
-            subLanes.emplace_back();
-          }
-
-          // Fill Space.
-          {
-            subLanes[lane].reserve(end + 1);
-
-            while (subLanes[lane].size() < end)
-              subLanes[lane].emplace_back(false);
-
-            for (size_t j = start; j < end; j++)
-              subLanes[lane][j] = true;
-          }
-
-          fprintf(pOutFile, "<div class=\"laneinst\" style=\"--off: %" PRIu64 "; --len: %" PRIu64 "; --idx: %" PRIu64 "; --lane: %" PRIu64 ";\"><div class=\"inst_base\">\n", _inst.clockIssued, _inst.clockExecuted - _inst.clockIssued, _inst.instructionIndex, lane);
-          fprintf(pOutFile, "\t<div class=\"inst dispatched\" style=\"--s: %" PRIi64 "; --l: %" PRIu64 ";\"></div>\n", (int64_t)_inst.clockDispatched - _inst.clockIssued, _inst.clockReady - _inst.clockDispatched);
-          fprintf(pOutFile, "\t<div class=\"inst pending\" style=\"execution--l: %" PRIu64 ";\"></div>\n", _inst.clockIssued - _inst.clockPending);
-          fprintf(pOutFile, "\t<div class=\"inst ready\" style=\"execution--l: %" PRIu64 ";\"></div>\n", _inst.clockIssued - _inst.clockReady);
-          fprintf(pOutFile, "\t<div class=\"inst executing\" style=\"execution--l: %" PRIu64 ";\"></div>\n", _inst.clockExecuted - _inst.clockIssued);
-          fprintf(pOutFile, "\t<div class=\"inst retiring\" style=\"execution--l: %" PRIu64 ";\"></div>\n", _inst.clockRetired - _inst.clockExecuted);
-
-          fputs("</div></div>\n", pOutFile);
+          fputs("</div>\n", pOutFile);
         }
       }
 
