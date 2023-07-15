@@ -31,8 +31,10 @@ project(ProjectName)
   files { "project.lua" }
   
   includedirs { "../execution-flow/include" }
+  includedirs { "../3rdParty/Zydis/include" }
 
   links { "../builds/lib/execution-flow.lib" }
+  links { "../3rdParty/zydis/lib/Zydis.lib" }
 
   filter { "configurations:Debug", "system:Windows" }
     ignoredefaultlibraries { "libcmt" }
