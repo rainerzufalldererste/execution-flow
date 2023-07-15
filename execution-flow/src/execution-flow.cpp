@@ -62,6 +62,7 @@ class FlowView final : public llvm::mca::HWEventListener
 {
 private:
   PortUsageFlow *pFlow; // initialized in the constructor.
+  size_t relevantIteration; // initialized in the constructor.
   size_t instructionClock = 0;
   llvm::SmallDenseMap<std::pair<unsigned, unsigned>, size_t, 32U> llvmResource2ListedResourceIdx;
   bool hasFirstObservedInstructionClock = false;
@@ -69,7 +70,10 @@ private:
   llvm::SmallVector<bool> isRegisterFileRelevant;
 
 public:
-  inline FlowView(PortUsageFlow *pFlow) : pFlow(pFlow) {}
+  inline FlowView(PortUsageFlow *pFlow, const size_t relevantIteration) :
+    pFlow(pFlow),
+    relevantIteration(relevantIteration)
+  { }
 
   inline void onCycleEnd() override { instructionClock++; }
 
@@ -191,7 +195,7 @@ bool execution_flow_create(const void *pAssembledBytes, const size_t assembledBy
   }
 
   // Create source for the `Pipeline` & `HWEventListener`.
-  llvm::mca::CircularSourceMgr source(mcaInstructions, 2);
+  llvm::mca::CircularSourceMgr source(mcaInstructions, 1);
 
   // Create custom behaviour.
   std::unique_ptr<llvm::mca::CustomBehaviour> customBehaviour(pTarget->createCustomBehaviour(*subtargetInfo, source, *instructionInfo));
@@ -209,7 +213,7 @@ bool execution_flow_create(const void *pAssembledBytes, const size_t assembledBy
   std::unique_ptr<llvm::mca::Pipeline> pipeline(mcaContext.createDefaultPipeline(pipelineOptions, source, *customBehaviour));
 
   // Create event handler to observe simulated hardware events.
-  FlowView flowView(&flow);
+  FlowView flowView(&flow, 0);
   pipeline->addEventListener(&flowView);
 
   // Get Stages from Scheduler model.
@@ -282,7 +286,7 @@ void FlowView::onEvent(const llvm::mca::HWInstructionEvent &evnt)
 
   InstructionInfo &instructionInfo = pFlow->instructionExecutionInfo[instructionIndex];
 
-  if (runIndex != 1) // since we're assuming this is a loop, we'll take the second iteration, to make sure latencies are carried over correctly.
+  if (runIndex != relevantIteration) // since we're assuming this is a loop, we'll take the second iteration, to make sure latencies are carried over correctly.
     return;
 
   if (!hasFirstObservedInstructionClock)
@@ -375,38 +379,38 @@ void FlowView::onEvent(const llvm::mca::HWStallEvent &evnt)
 
   InstructionInfo &instructionInfo = pFlow->instructionExecutionInfo[instructionIndex];
 
-  if (runIndex != 1) // since we're assuming this is a loop, we'll take the second iteration, to make sure latencies are carried over correctly.
+  if (runIndex != relevantIteration) // since we're assuming this is a loop, we'll take the second iteration, to make sure latencies are carried over correctly.
+    return;
+
+  switch (evnt.Type)
   {
-    switch (evnt.Type)
-    {
-    case llvm::mca::HWStallEvent::RegisterFileStall:
-      instructionInfo.bottleneckInfo.emplace_back("Register Unavailable");
-      break;
+  case llvm::mca::HWStallEvent::RegisterFileStall:
+    instructionInfo.bottleneckInfo.emplace_back("Register Unavailable");
+    break;
 
-    case llvm::mca::HWStallEvent::RetireControlUnitStall:
-      instructionInfo.bottleneckInfo.emplace_back("Retire Tokens Unavailable");
-      break;
+  case llvm::mca::HWStallEvent::RetireControlUnitStall:
+    instructionInfo.bottleneckInfo.emplace_back("Retire Tokens Unavailable");
+    break;
 
-    case llvm::mca::HWStallEvent::DispatchGroupStall:
-      instructionInfo.bottleneckInfo.emplace_back("Static Restrictions on the Dispatch Group");
-      break;
+  case llvm::mca::HWStallEvent::DispatchGroupStall:
+    instructionInfo.bottleneckInfo.emplace_back("Static Restrictions on the Dispatch Group");
+    break;
 
-    case llvm::mca::HWStallEvent::SchedulerQueueFull:
-      instructionInfo.bottleneckInfo.emplace_back("Scheduler Queue Full");
-      break;
+  case llvm::mca::HWStallEvent::SchedulerQueueFull:
+    instructionInfo.bottleneckInfo.emplace_back("Scheduler Queue Full");
+    break;
 
-    case llvm::mca::HWStallEvent::LoadQueueFull:
-      instructionInfo.bottleneckInfo.emplace_back("Load Queue Full");
-      break;
+  case llvm::mca::HWStallEvent::LoadQueueFull:
+    instructionInfo.bottleneckInfo.emplace_back("Load Queue Full");
+    break;
 
-    case llvm::mca::HWStallEvent::StoreQueueFull:
-      instructionInfo.bottleneckInfo.emplace_back("Store Queue Full");
-      break;
+  case llvm::mca::HWStallEvent::StoreQueueFull:
+    instructionInfo.bottleneckInfo.emplace_back("Store Queue Full");
+    break;
 
-    case llvm::mca::HWStallEvent::CustomBehaviourStall:
-      instructionInfo.bottleneckInfo.emplace_back("Structural Hazard");
-      break;
-    }
+  case llvm::mca::HWStallEvent::CustomBehaviourStall:
+    instructionInfo.bottleneckInfo.emplace_back("Structural Hazard");
+    break;
   }
 }
 
