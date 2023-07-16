@@ -171,23 +171,77 @@ int main(int argc, char **pArgv)
             }
 
             .inst.dispatched {
-              background: #ffffff20;
+              background: #ffffff2e;
+            }
+
+            .inst.dispatched::before {
+              content: '◀ dispatched';
+              position: absolute;
+              width: 200pt;
+              margin-left: 10pt;
+              opacity: calc(min(1, var(--l)));
+              margin-top: -8pt;
             }
 
             .inst.pending {
-              background: #2d639ba6;
+              background: #3c8adbad;
+            }
+
+            .inst.pending::before {
+              content: '◀ pending';
+              position: absolute;
+              width: 200pt;
+              margin-left: 10pt;
+              opacity: calc(min(1, var(--l)));
+              margin-top: -8pt;
             }
 
             .inst.ready {
-              background: #adf3ffd9;
+              background: #66ffaaa3;
+            }
+
+            .inst.ready::before {
+              content: '◀ ready';
+              position: absolute;
+              width: 200pt;
+              margin-left: 10pt;
+              opacity: calc(min(1, var(--l)));
+              margin-top: -8pt;
             }
 
             .inst.executing {
               background: #fff;
             }
 
+            .inst.executing::before {
+              content: '◀ issued';
+              position: absolute;
+              width: 200pt;
+              margin-left: 10pt;
+              opacity: calc(min(1, var(--l)));
+              margin-top: -8pt;
+            }
+
             .inst.retiring {
-              background: #ffffff05;
+              background: #ffffff26;
+            }
+
+            .inst.retiring::before {
+              content: '◀ executed';
+              position: absolute;
+              width: 200pt;
+              margin-left: 10pt;
+              opacity: calc(min(1, var(--l)));
+              margin-top: -8pt;
+            }
+
+            .inst.retiring::after {
+              content: '◀ retired';
+              position: absolute;
+              width: 200pt;
+              margin-left: 10pt;
+              opacity: calc(min(1, var(--l)));
+              margin-top: calc(var(--l) * 20pt - 8pt);
             }
 
             .main {
@@ -218,6 +272,10 @@ int main(int argc, char **pArgv)
             span.asm.highlighted {
               color: #ffcaca;
             }
+
+            span.asm.null {
+              color: #555;
+            }
             
             div.disasmline.selected span.linenum {
                 color: #666;
@@ -242,6 +300,7 @@ int main(int argc, char **pArgv)
               background: #272727;
               padding: 3pt 5pt;
               opacity: 0%;
+              max-width: 220pt;
             }
 
             div.disasmline.selected div.extra_info {
@@ -254,6 +313,19 @@ int main(int argc, char **pArgv)
 
             .registers {
               color: #959595;
+            }
+
+            span.rsrc {
+                --colorA: hsl(calc(var(--lane) * 0.41 * 360deg) 50% 50%);
+                --colorB: hsl(calc(var(--lane) * 0.41 * 360deg) 80% 80%);
+                --colorC: hsl(calc(var(--lane) * 0.41 * 360deg) 20% 20%);
+                border: solid 1.5pt var(--colorA);
+                color: var(--colorB);
+                padding: 2pt 5pt;
+                background: var(--colorC);
+                border-radius: 10pt;
+                display: inline-block;
+                margin: 4pt 4pt 1pt 0pt;
             }
         </style>
         <div class="main">
@@ -289,7 +361,7 @@ int main(int argc, char **pArgv)
 
         const auto &instructionInfo = flow.instructionExecutionInfo[instructionIndex];
 
-        const char *subVariant = instructionInfo.bottleneckInfo.size() > 0 ? " highlighted" : "";
+        const char *subVariant = instructionInfo.bottleneckInfo.size() > 0 ? " highlighted" : (instructionInfo.usage.size() == 0 ? " null" : "");
 
         fprintf(pOutFile, "<div class=\"disasmline\" idx=\"%" PRIu64 "\"><span class=\"linenum%s\">0x%08" PRIX64 "&emsp;</span><span class=\"asm%s\">%s&emsp;</span><div class=\"extra_info\">", instructionIndex, subVariant, virtualAddress + addressDisplayOffset, subVariant, disasmBuffer);
 
@@ -301,7 +373,18 @@ int main(int argc, char **pArgv)
         fprintf(pOutFile, "<div class=\"cycleInfo\">retiring: %" PRIu64 " cycles</div>", instructionInfo.clockRetired - instructionInfo.clockExecuted);
 
         for (size_t j = 0; j < instructionInfo.physicalRegistersObstructedPerRegisterType.size(); j++)
-          fprintf(pOutFile, "<div class=\"registers\">%" PRIu64 " %s registers used (%" PRIu64 " total)</div>", instructionInfo.physicalRegistersObstructedPerRegisterType[j], flow.hardwareRegisters[j].registerTypeName.c_str(), flow.hardwareRegisters[j].count);
+          if (instructionInfo.physicalRegistersObstructedPerRegisterType[j] != 0)
+            fprintf(pOutFile, "<div class=\"registers\">%" PRIu64 " %s (total: %" PRIu64 ") registers used</div>", instructionInfo.physicalRegistersObstructedPerRegisterType[j], flow.hardwareRegisters[j].registerTypeName.c_str(), flow.hardwareRegisters[j].count);
+
+        if (instructionInfo.usage.size() != 0)
+        {
+          fputs("<div class=\"resourcecontainer\">\n", pOutFile);
+
+          for (const auto &_rsrcIdx : instructionInfo.usage)
+            fprintf(pOutFile, "<span class=\"rsrc\" style=\"--lane: %" PRIu64 "\">%s: %3.1f</span>", _rsrcIdx.resourceIndex, flow.ports[_rsrcIdx.resourceIndex].name.c_str(), _rsrcIdx.pressure);
+
+          fputs("</div>\n", pOutFile);
+        }
 
         for (const auto &_b : instructionInfo.bottleneckInfo)
           fprintf(pOutFile, "<div class=\"bottleneck\">%s</div>", _b.c_str());
