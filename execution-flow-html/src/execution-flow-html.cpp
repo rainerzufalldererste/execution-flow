@@ -87,7 +87,7 @@ int main(int argc, char **pArgv)
 
   // Create flow.
   PortUsageFlow flow;
-  const bool result = execution_flow_create(pData, fileSize, &flow, CoreArchitecture::_CurrentCPU, 3, 0);
+  const bool result = execution_flow_create(pData, fileSize, &flow, CoreArchitecture::_CurrentCPU, 8, 0);
 
   if (!result)
     puts("Failed to create port usage flow correctly. This could mean that the provided file wasn't valid.");
@@ -117,6 +117,7 @@ int main(int argc, char **pArgv)
                 background: #111;
                 color: #fff;
                 font-family: Consolas, monospace;
+                overflow-x: hidden;
             }
 
             table.flow tr {
@@ -154,10 +155,12 @@ int main(int argc, char **pArgv)
             }
 
             .instex {
+                display: none;
                 opacity: 0%;
             }
 
             .instex.selected {
+                display: block;
                 opacity: 100%;
             }
             
@@ -245,16 +248,19 @@ int main(int argc, char **pArgv)
             }
 
             .main {
-              display: flex;
+              display: block;
             }
             
-            .disasmcontainer, .flowgraph {
-              resize: horizontal;
+            .flowgraph {
+              margin-left: 480pt;
             }
             
             .disasm {
-              min-width: 480pt;
+              width: 480pt;
               cursor: default;
+              position: fixed;
+              max-height: 100%;
+              overflow-y: scroll;
             }
             
             span.linenum {
@@ -294,16 +300,16 @@ int main(int argc, char **pArgv)
             }
 
             div.extra_info {
-              display: block;
               position: absolute;
               left: 250pt;
               background: #272727;
               padding: 3pt 5pt;
-              opacity: 0%;
+              display: none;
               max-width: 220pt;
             }
 
             div.disasmline.selected div.extra_info {
+              display: block;
               opacity: 80%;
             }
 
@@ -327,11 +333,19 @@ int main(int argc, char **pArgv)
                 display: inline-block;
                 margin: 4pt 4pt 1pt 0pt;
             }
+
+            div.spacer {
+              width: 1pt;
+              height: 1pt;
+              margin-bottom: 500pt;
+            }
         </style>
         <div class="main">
 )TEXT";
 
     fputs(documentSetupHtml, pOutFile);
+
+    std::vector<std::string> disassemblyLines;
 
     // Add disassembly.
     {
@@ -359,9 +373,11 @@ int main(int argc, char **pArgv)
         FATAL_IF(!(ZYAN_SUCCESS(ZydisDecoderDecodeFull(&decoder, pData + virtualAddress, fileSize - virtualAddress, &instruction, operands))), "Invalid Instruction at 0x%" PRIX64 ".", virtualAddress);
         FATAL_IF(!ZYAN_SUCCESS(ZydisFormatterFormatInstruction(&formatter, &instruction, operands, sizeof(operands) / sizeof(operands[0]), disasmBuffer, sizeof(disasmBuffer), virtualAddress + addressDisplayOffset, nullptr)), "Failed to Format Instruction at 0x%" PRIX64 ".", virtualAddress);
 
+        disassemblyLines.push_back(disasmBuffer);
+
         const auto &instructionInfo = flow.instructionExecutionInfo[instructionIndex];
 
-        const char *subVariant = instructionInfo.bottleneckInfo.size() > 0 ? " highlighted" : (instructionInfo.usage.size() == 0 && instructionInfo.clockExecuted - instructionInfo.clockIssued ? " null" : "");
+        const char *subVariant = instructionInfo.bottleneckInfo.size() > 0 ? " highlighted" : (instructionInfo.usage.size() == 0 && instructionInfo.clockExecuted - instructionInfo.clockIssued == 0 ? " null" : "");
 
         fprintf(pOutFile, "<div class=\"disasmline\" idx=\"%" PRIu64 "\"><span class=\"linenum%s\">0x%08" PRIX64 "&emsp;</span><span class=\"asm%s\">%s&emsp;</span><div class=\"extra_info\">", instructionIndex, subVariant, virtualAddress + addressDisplayOffset, subVariant, disasmBuffer);
 
@@ -401,7 +417,7 @@ int main(int argc, char **pArgv)
         virtualAddress += instruction.length;
       }
 
-      fputs("</div>\n</div>\n", pOutFile);
+      fputs("<div class=\"spacer\"></div></div>\n</div>\n", pOutFile);
     }
 
     // Add flow graph.
@@ -419,29 +435,33 @@ int main(int argc, char **pArgv)
 
         for (const auto &_inst : flow.instructionExecutionInfo)
         {
-          for (const auto &_port : _inst.usage)
+          for (const auto &_iter : _inst.perIteration)
           {
-            if (_port.resourceIndex != i)
-              continue;
+            for (const auto &_port : _inst.usage)
+            {
+              if (_port.resourceIndex != i)
+                continue;
 
-            fprintf(pOutFile, "<div class=\"laneinst\" idx=\"%" PRIu64 "\" style=\"--off: %" PRIu64 "; --len: %" PRIu64 "; --idx: %" PRIu64 "; --lane: %" PRIu64 ";\"></div><div class=\"instex\" idx=\"%" PRIu64 "\">\n", _inst.instructionIndex, _inst.clockIssued, _inst.clockExecuted - _inst.clockIssued, _inst.instructionIndex, i, _inst.instructionIndex);
-            fprintf(pOutFile, "\t<div class=\"inst dispatched\" style=\"--s: %" PRIu64 "; --l: %" PRIu64 ";\"></div>\n", _inst.clockDispatched, _inst.clockPending - _inst.clockDispatched);
-            fprintf(pOutFile, "\t<div class=\"inst pending\" style=\"--s: %" PRIu64 "; --l: %" PRIu64 ";\"></div>\n", _inst.clockPending, _inst.clockReady - _inst.clockPending);
-            fprintf(pOutFile, "\t<div class=\"inst ready\" style=\"--s: %" PRIu64 "; --l: %" PRIu64 ";\"></div>\n", _inst.clockReady, _inst.clockIssued - _inst.clockReady);
-            fprintf(pOutFile, "\t<div class=\"inst executing\" style=\"--s: %" PRIu64 "; --l: %" PRIu64 ";\"></div>\n", _inst.clockIssued, _inst.clockExecuted - _inst.clockIssued);
-            fprintf(pOutFile, "\t<div class=\"inst retiring\" style=\"--s: %" PRIu64 "; --l: %" PRIu64 ";\"></div>\n", _inst.clockExecuted, _inst.clockRetired - _inst.clockExecuted);
+              fprintf(pOutFile, "<div class=\"laneinst\" title=\"%s\" idx=\"%" PRIu64 "\" style=\"--off: %" PRIu64 "; --len: %" PRIu64 "; --idx: %" PRIu64 "; --lane: %" PRIu64 ";\"></div><div class=\"instex\" idx=\"%" PRIu64 "\">\n", disassemblyLines[_inst.instructionIndex].c_str(), _inst.instructionIndex, _iter.clockIssued, _iter.clockExecuted - _iter.clockIssued, _inst.instructionIndex, i, _inst.instructionIndex);
+              fprintf(pOutFile, "\t<div class=\"inst dispatched\" style=\"--s: %" PRIu64 "; --l: %" PRIu64 ";\"></div>\n", _iter.clockDispatched, _iter.clockPending - _iter.clockDispatched);
+              fprintf(pOutFile, "\t<div class=\"inst pending\" style=\"--s: %" PRIu64 "; --l: %" PRIu64 ";\"></div>\n", _iter.clockPending, _iter.clockReady - _iter.clockPending);
+              fprintf(pOutFile, "\t<div class=\"inst ready\" style=\"--s: %" PRIu64 "; --l: %" PRIu64 ";\"></div>\n", _iter.clockReady, _iter.clockIssued - _iter.clockReady);
+              fprintf(pOutFile, "\t<div class=\"inst executing\" style=\"--s: %" PRIu64 "; --l: %" PRIu64 ";\"></div>\n", _iter.clockIssued, _iter.clockExecuted - _iter.clockIssued);
+              fprintf(pOutFile, "\t<div class=\"inst retiring\" style=\"--s: %" PRIu64 "; --l: %" PRIu64 ";\"></div>\n", _iter.clockExecuted, _iter.clockRetired - _iter.clockExecuted);
 
-            fputs("</div>\n", pOutFile);
+              fputs("</div>\n", pOutFile);
+            }
           }
         }
 
         fputs("</td>", pOutFile);
       }
 
-      fputs("</tr>\n</table>\n</div>\n", pOutFile);
+      fputs("</tr>\n</table>\n</div>", pOutFile);
     }
 
     const char *script = R"SCRIPT(
+</div>
 <script>
 var lines = document.getElementsByClassName("disasmline");
 var inst0 = document.getElementsByClassName("laneinst");
@@ -503,7 +523,7 @@ for (var i = 0; i < lines.length; i++) {
 
     fputs(script, pOutFile);
 
-    fputs("</div>\n</body>\n</html>", pOutFile);
+    fputs("</body>\n</html>", pOutFile);
     fclose(pOutFile);
   }
 

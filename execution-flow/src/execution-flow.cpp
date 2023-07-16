@@ -331,9 +331,6 @@ void FlowView::onEvent(const llvm::mca::HWInstructionEvent &evnt)
 
   InstructionInfo &instructionInfo = pFlow->instructionExecutionInfo[instructionIndex];
 
-  if (runIndex != relevantIteration) // since we're assuming this is a loop, we'll take the second iteration, to make sure latencies are carried over correctly.
-    return;
-
   if (!hasFirstObservedInstructionClock)
   {
     hasFirstObservedInstructionClock = true;
@@ -342,41 +339,68 @@ void FlowView::onEvent(const llvm::mca::HWInstructionEvent &evnt)
 
   switch (evnt.Type)
   {
-  case llvm::mca::HWInstructionEvent::Ready:
+  case llvm::mca::HWInstructionEvent::Dispatched:
   {
-    instructionInfo.clockReady = instructionClock - firstObservedInstructionClock;
+    if (runIndex == relevantIteration)
+    {
+      const auto &dispatchedEvent = static_cast<const llvm::mca::HWInstructionDispatchedEvent &>(evnt);
+
+      instructionInfo.clockDispatched = instructionClock - firstObservedInstructionClock;
+      instructionInfo.uOpCount = dispatchedEvent.MicroOpcodes;
+
+      for (size_t i = 0; i < dispatchedEvent.UsedPhysRegs.size(); i++)
+      {
+        assert(i < isRegisterFileRelevant.size() && "More register files used than previously added");
+
+        if (!isRegisterFileRelevant[i]) // Skip ones that were empty.
+          continue;
+
+        instructionInfo.physicalRegistersObstructedPerRegisterType.push_back((size_t)dispatchedEvent.UsedPhysRegs[i]);
+      }
+    }
+
+    if (instructionInfo.perIteration.size() <= runIndex)
+      instructionInfo.perIteration.resize(runIndex + 1);
+
+    instructionInfo.perIteration[runIndex].clockDispatched = instructionClock;
+
     break;
   }
 
-  case llvm::mca::HWInstructionEvent::Dispatched:
+  case llvm::mca::HWInstructionEvent::Ready:
   {
-    const auto &dispatchedEvent = static_cast<const llvm::mca::HWInstructionDispatchedEvent &>(evnt);
+    if (runIndex == relevantIteration)
+      instructionInfo.clockReady = instructionClock - firstObservedInstructionClock;
 
-    instructionInfo.clockDispatched = instructionClock - firstObservedInstructionClock;
-    instructionInfo.uOpCount = dispatchedEvent.MicroOpcodes;
+    if (instructionInfo.perIteration.size() <= runIndex)
+      instructionInfo.perIteration.resize(runIndex + 1);
 
-    for (size_t i = 0; i < dispatchedEvent.UsedPhysRegs.size(); i++)
-    {
-      assert(i < isRegisterFileRelevant.size() && "More register files used than previously added");
-
-      if (!isRegisterFileRelevant[i]) // Skip ones that were empty.
-        continue;
-
-      instructionInfo.physicalRegistersObstructedPerRegisterType.push_back((size_t)dispatchedEvent.UsedPhysRegs[i]);
-    }
-
+    instructionInfo.perIteration[runIndex].clockReady = instructionClock;
+    
     break;
   }
 
   case llvm::mca::HWInstructionEvent::Executed:
   {
-    instructionInfo.clockExecuted = instructionClock - firstObservedInstructionClock;
+    if (runIndex == relevantIteration)
+      instructionInfo.clockExecuted = instructionClock - firstObservedInstructionClock;
+
+    if (instructionInfo.perIteration.size() <= runIndex)
+      instructionInfo.perIteration.resize(runIndex + 1);
+
+    instructionInfo.perIteration[runIndex].clockExecuted = instructionClock;
     break;
   }
 
   case llvm::mca::HWInstructionEvent::Pending:
   {
-    instructionInfo.clockPending = instructionClock - firstObservedInstructionClock;
+    if (runIndex == relevantIteration)
+      instructionInfo.clockPending = instructionClock - firstObservedInstructionClock;
+
+    if (instructionInfo.perIteration.size() <= runIndex)
+      instructionInfo.perIteration.resize(runIndex + 1);
+
+    instructionInfo.perIteration[runIndex].clockPending = instructionClock;
     break;
   }
 
@@ -385,7 +409,13 @@ void FlowView::onEvent(const llvm::mca::HWInstructionEvent &evnt)
     const auto &retiredEvent = static_cast<const llvm::mca::HWInstructionRetiredEvent &>(evnt);
     (void)retiredEvent; // seems to only contain the same registers that the dispatched event already contained, marking them as free.
 
-    instructionInfo.clockRetired = instructionClock - firstObservedInstructionClock;
+    if (runIndex == relevantIteration)
+      instructionInfo.clockRetired = instructionClock - firstObservedInstructionClock;
+
+    if (instructionInfo.perIteration.size() <= runIndex)
+      instructionInfo.perIteration.resize(runIndex + 1);
+
+    instructionInfo.perIteration[runIndex].clockRetired = instructionClock;
 
     break;
   }
@@ -394,7 +424,13 @@ void FlowView::onEvent(const llvm::mca::HWInstructionEvent &evnt)
   {
     const auto &issuedEvent = static_cast<const llvm::mca::HWInstructionIssuedEvent &>(evnt);
 
-    instructionInfo.clockIssued = instructionClock - firstObservedInstructionClock;
+    if (runIndex == relevantIteration)
+      instructionInfo.clockIssued = instructionClock - firstObservedInstructionClock;
+
+    if (instructionInfo.perIteration.size() <= runIndex)
+      instructionInfo.perIteration.resize(runIndex + 1);
+
+    instructionInfo.perIteration[runIndex].clockIssued = instructionClock;
 
     for (const auto &resourceUsage : issuedEvent.UsedResources)
     {
@@ -406,7 +442,10 @@ void FlowView::onEvent(const llvm::mca::HWInstructionEvent &evnt)
 
       const size_t portIndex = llvmResource2ListedResourceIdx[resourceUsage.first];
 
-      instructionInfo.usage.push_back(ResourcePressureInfo(portIndex, (double)resourceUsage.second));
+      if (runIndex == relevantIteration)
+        instructionInfo.usage.push_back(ResourcePressureInfo(portIndex, (double)resourceUsage.second));
+      
+      instructionInfo.perIteration[runIndex].usage.push_back(ResourcePressureInfo(portIndex, (double)resourceUsage.second));
     }
 
     break;
@@ -424,37 +463,34 @@ void FlowView::onEvent(const llvm::mca::HWStallEvent &evnt)
 
   InstructionInfo &instructionInfo = pFlow->instructionExecutionInfo[instructionIndex];
 
-  if (runIndex != relevantIteration) // since we're assuming this is a loop, we'll take the second iteration, to make sure latencies are carried over correctly.
-    return;
-
   switch (evnt.Type)
   {
   case llvm::mca::HWStallEvent::RegisterFileStall:
-    instructionInfo.bottleneckInfo.emplace_back("Register Unavailable");
+    instructionInfo.bottleneckInfo.emplace_back(std::string("Iteration ") + std::to_string(runIndex + 1) + ": Register Unavailable");
     break;
 
   case llvm::mca::HWStallEvent::RetireControlUnitStall:
-    instructionInfo.bottleneckInfo.emplace_back("Retire Tokens Unavailable");
+    instructionInfo.bottleneckInfo.emplace_back(std::string("Iteration ") + std::to_string(runIndex + 1) + ": Retire Tokens Unavailable");
     break;
 
   case llvm::mca::HWStallEvent::DispatchGroupStall:
-    instructionInfo.bottleneckInfo.emplace_back("Static Restrictions on the Dispatch Group");
+    instructionInfo.bottleneckInfo.emplace_back(std::string("Iteration ") + std::to_string(runIndex + 1) + ": Static Restrictions on the Dispatch Group");
     break;
 
   case llvm::mca::HWStallEvent::SchedulerQueueFull:
-    instructionInfo.bottleneckInfo.emplace_back("Scheduler Queue Full");
+    instructionInfo.bottleneckInfo.emplace_back(std::string("Iteration ") + std::to_string(runIndex + 1) + ": Scheduler Queue Full");
     break;
 
   case llvm::mca::HWStallEvent::LoadQueueFull:
-    instructionInfo.bottleneckInfo.emplace_back("Load Queue Full");
+    instructionInfo.bottleneckInfo.emplace_back(std::string("Iteration ") + std::to_string(runIndex + 1) + ": Load Queue Full");
     break;
 
   case llvm::mca::HWStallEvent::StoreQueueFull:
-    instructionInfo.bottleneckInfo.emplace_back("Store Queue Full");
+    instructionInfo.bottleneckInfo.emplace_back(std::string("Iteration ") + std::to_string(runIndex + 1) + ": Store Queue Full");
     break;
 
   case llvm::mca::HWStallEvent::CustomBehaviourStall:
-    instructionInfo.bottleneckInfo.emplace_back("Structural Hazard");
+    instructionInfo.bottleneckInfo.emplace_back(std::string("Iteration ") + std::to_string(runIndex + 1) + ": Structural Hazard");
     break;
   }
 }

@@ -111,22 +111,32 @@ struct HardwareRegisterCount
   { }
 };
 
-struct InstructionInfo
+struct BasicInstructionInfo
 {
-  size_t instructionIndex, instructionByteOffset, clockPending, clockReady, clockIssued, clockExecuted, clockDispatched, clockRetired, uOpCount;
+  size_t clockPending, clockReady, clockIssued, clockExecuted, clockDispatched, clockRetired;
   std::vector<ResourcePressureInfo> usage;
-  std::vector<std::string> bottleneckInfo;
-  std::vector<size_t> physicalRegistersObstructedPerRegisterType;
 
-  inline InstructionInfo(const size_t instructionIndex, const size_t instructionByteOffset) :
-    instructionIndex(instructionIndex),
-    instructionByteOffset(instructionByteOffset),
+  inline BasicInstructionInfo() :
     clockPending(0),
     clockReady(0),
     clockIssued(0),
     clockExecuted(0),
     clockDispatched(0),
-    clockRetired(0),
+    clockRetired(0)
+  { }
+};
+
+struct InstructionInfo : BasicInstructionInfo
+{
+  size_t instructionIndex, instructionByteOffset, uOpCount;
+  std::vector<std::string> bottleneckInfo;
+  std::vector<size_t> physicalRegistersObstructedPerRegisterType;
+  std::vector<BasicInstructionInfo> perIteration;
+
+  inline InstructionInfo(const size_t instructionIndex, const size_t instructionByteOffset) :
+    BasicInstructionInfo(),
+    instructionIndex(instructionIndex),
+    instructionByteOffset(instructionByteOffset),
     uOpCount(0)
   { }
 };
