@@ -89,7 +89,7 @@ public:
 
 #pragma optimize ("", off)
 
-bool execution_flow_create(const void *pAssembledBytes, const size_t assembledBytesLength, PortUsageFlow *pFlow)
+bool execution_flow_create(const void *pAssembledBytes, const size_t assembledBytesLength, PortUsageFlow *pFlow, const size_t relevantIteration)
 {
   if (pFlow == nullptr)
     return false;
@@ -195,7 +195,7 @@ bool execution_flow_create(const void *pAssembledBytes, const size_t assembledBy
   }
 
   // Create source for the `Pipeline` & `HWEventListener`.
-  llvm::mca::CircularSourceMgr source(mcaInstructions, 1);
+  llvm::mca::CircularSourceMgr source(mcaInstructions, relevantIteration + 1);
 
   // Create custom behaviour.
   std::unique_ptr<llvm::mca::CustomBehaviour> customBehaviour(pTarget->createCustomBehaviour(*subtargetInfo, source, *instructionInfo));
@@ -213,7 +213,7 @@ bool execution_flow_create(const void *pAssembledBytes, const size_t assembledBy
   std::unique_ptr<llvm::mca::Pipeline> pipeline(mcaContext.createDefaultPipeline(pipelineOptions, source, *customBehaviour));
 
   // Create event handler to observe simulated hardware events.
-  FlowView flowView(&flow, 0);
+  FlowView flowView(&flow, relevantIteration);
   pipeline->addEventListener(&flowView);
 
   // Get Stages from Scheduler model.

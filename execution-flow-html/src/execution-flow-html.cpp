@@ -87,7 +87,7 @@ int main(int argc, char **pArgv)
 
   // Create flow.
   PortUsageFlow flow;
-  const bool result = execution_flow_create(pData, fileSize, &flow);
+  const bool result = execution_flow_create(pData, fileSize, &flow, 0);
 
   if (!result)
     puts("Failed to create port usage flow correctly. This could mean that the provided file wasn't valid.");
@@ -210,6 +210,14 @@ int main(int argc, char **pArgv)
             span.asm {
               color: #aaa;
             }
+
+            span.linenum.highlighted {
+              color: #996b66;
+            }
+
+            span.asm.highlighted {
+              color: #ffcaca;
+            }
             
             div.disasmline.selected span.linenum {
                 color: #666;
@@ -217,6 +225,35 @@ int main(int argc, char **pArgv)
             
             div.disasmline.selected span.asm {
                 color: #fff;
+            }
+
+            div.disasmline.selected span.linenum.highlighted {
+              color: #d96054;
+            }
+
+            div.disasmline.selected span.asm.highlighted {
+              color: #fff;
+            }
+
+            div.extra_info {
+              display: block;
+              position: absolute;
+              left: 250pt;
+              background: #272727;
+              padding: 3pt 5pt;
+              opacity: 0%;
+            }
+
+            div.disasmline.selected div.extra_info {
+              opacity: 80%;
+            }
+
+            .bottleneck {
+              color: #ff7171;
+            }
+
+            .registers {
+              color: #959595;
             }
         </style>
         <div class="main">
@@ -250,7 +287,26 @@ int main(int argc, char **pArgv)
         FATAL_IF(!(ZYAN_SUCCESS(ZydisDecoderDecodeFull(&decoder, pData + virtualAddress, fileSize - virtualAddress, &instruction, operands))), "Invalid Instruction at 0x%" PRIX64 ".", virtualAddress);
         FATAL_IF(!ZYAN_SUCCESS(ZydisFormatterFormatInstruction(&formatter, &instruction, operands, sizeof(operands) / sizeof(operands[0]), disasmBuffer, sizeof(disasmBuffer), virtualAddress + addressDisplayOffset, nullptr)), "Failed to Format Instruction at 0x%" PRIX64 ".", virtualAddress);
 
-        fprintf(pOutFile, "<div class=\"disasmline\" idx=\"%" PRIu64 "\"><span class=\"linenum\">0x%08" PRIX64 "&emsp;</span><span class=\"asm\">%s&emsp;</span></div>\n", instructionIndex, virtualAddress + addressDisplayOffset, disasmBuffer);
+        const auto &instructionInfo = flow.instructionExecutionInfo[instructionIndex];
+
+        const char *subVariant = instructionInfo.bottleneckInfo.size() > 0 ? " highlighted" : "";
+
+        fprintf(pOutFile, "<div class=\"disasmline\" idx=\"%" PRIu64 "\"><span class=\"linenum%s\">0x%08" PRIX64 "&emsp;</span><span class=\"asm%s\">%s&emsp;</span><div class=\"extra_info\">", instructionIndex, subVariant, virtualAddress + addressDisplayOffset, subVariant, disasmBuffer);
+
+        fprintf(pOutFile, "<div class=\"uops\">%" PRIu64 " uOps</div>", instructionInfo.uOpCount);
+        fprintf(pOutFile, "<div class=\"cycleInfo\">dispatched: %" PRIu64 " cycles</div>", instructionInfo.clockPending - instructionInfo.clockDispatched);
+        fprintf(pOutFile, "<div class=\"cycleInfo\">pending: %" PRIu64 " cycles</div>", instructionInfo.clockReady - instructionInfo.clockPending);
+        fprintf(pOutFile, "<div class=\"cycleInfo\">ready: %" PRIu64 " cycles</div>", instructionInfo.clockIssued - instructionInfo.clockReady);
+        fprintf(pOutFile, "<div class=\"cycleInfo\">executing: %" PRIu64 " cycles</div>", instructionInfo.clockExecuted - instructionInfo.clockIssued);
+        fprintf(pOutFile, "<div class=\"cycleInfo\">retiring: %" PRIu64 " cycles</div>", instructionInfo.clockRetired - instructionInfo.clockExecuted);
+
+        for (size_t j = 0; j < instructionInfo.physicalRegistersObstructedPerRegisterType.size(); j++)
+          fprintf(pOutFile, "<div class=\"registers\">%" PRIu64 " %s registers used (%" PRIu64 " total)</div>", instructionInfo.physicalRegistersObstructedPerRegisterType[j], flow.hardwareRegisters[j].registerTypeName.c_str(), flow.hardwareRegisters[j].count);
+
+        for (const auto &_b : instructionInfo.bottleneckInfo)
+          fprintf(pOutFile, "<div class=\"bottleneck\">%s</div>", _b.c_str());
+
+        fputs("</div></div>\n", pOutFile);
 
         virtualAddress += instruction.length;
       }

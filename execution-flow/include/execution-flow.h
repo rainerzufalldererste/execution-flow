@@ -100,6 +100,6 @@ struct PortUsageFlow
 
 ////////////////////////////////////////////////////////////////////////////////
 
-bool execution_flow_create(const void *pAssembledBytes, const size_t assembledBytesLength, PortUsageFlow *pFlow);
+bool execution_flow_create(const void *pAssembledBytes, const size_t assembledBytesLength, PortUsageFlow *pFlow, const size_t relevantIteration);
 
 #endif // execution_flow_h__
