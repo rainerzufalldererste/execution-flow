@@ -273,3 +273,7 @@ mediaLib/lib/*.lib
 enc_temp_folder/*
 builds/*
 * Advisor Results */
+
+# LLVM Libs are too large for git-lfs
+3rdParty/llvm/lib/*.lib
+3rdParty/llvm/lib/*.cookie
