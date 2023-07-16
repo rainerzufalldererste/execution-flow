@@ -87,7 +87,7 @@ int main(int argc, char **pArgv)
 
   // Create flow.
   PortUsageFlow flow;
-  const bool result = execution_flow_create(pData, fileSize, &flow, 0);
+  const bool result = execution_flow_create(pData, fileSize, &flow, CoreArchitecture::_CurrentCPU, 3, 0);
 
   if (!result)
     puts("Failed to create port usage flow correctly. This could mean that the provided file wasn't valid.");
@@ -361,7 +361,7 @@ int main(int argc, char **pArgv)
 
         const auto &instructionInfo = flow.instructionExecutionInfo[instructionIndex];
 
-        const char *subVariant = instructionInfo.bottleneckInfo.size() > 0 ? " highlighted" : (instructionInfo.usage.size() == 0 ? " null" : "");
+        const char *subVariant = instructionInfo.bottleneckInfo.size() > 0 ? " highlighted" : (instructionInfo.usage.size() == 0 && instructionInfo.clockExecuted - instructionInfo.clockIssued ? " null" : "");
 
         fprintf(pOutFile, "<div class=\"disasmline\" idx=\"%" PRIu64 "\"><span class=\"linenum%s\">0x%08" PRIX64 "&emsp;</span><span class=\"asm%s\">%s&emsp;</span><div class=\"extra_info\">", instructionIndex, subVariant, virtualAddress + addressDisplayOffset, subVariant, disasmBuffer);
 
@@ -373,8 +373,15 @@ int main(int argc, char **pArgv)
         fprintf(pOutFile, "<div class=\"cycleInfo\">retiring: %" PRIu64 " cycles</div>", instructionInfo.clockRetired - instructionInfo.clockExecuted);
 
         for (size_t j = 0; j < instructionInfo.physicalRegistersObstructedPerRegisterType.size(); j++)
-          if (instructionInfo.physicalRegistersObstructedPerRegisterType[j] != 0)
-            fprintf(pOutFile, "<div class=\"registers\">%" PRIu64 " %s (total: %" PRIu64 ") registers used</div>", instructionInfo.physicalRegistersObstructedPerRegisterType[j], flow.hardwareRegisters[j].registerTypeName.c_str(), flow.hardwareRegisters[j].count);
+        {
+          if (instructionInfo.physicalRegistersObstructedPerRegisterType[j] == 0)
+            continue;
+
+          if (flow.hardwareRegisters.size() > j)
+            fprintf(pOutFile, "<div class=\"registers\">%" PRIu64 " %s registers used (total: %" PRIu64 ")</div>", instructionInfo.physicalRegistersObstructedPerRegisterType[j], flow.hardwareRegisters[j].registerTypeName.c_str(), flow.hardwareRegisters[j].count);
+          else
+            fprintf(pOutFile, "<div class=\"registers\">%" PRIu64 " registers used</div>", instructionInfo.physicalRegistersObstructedPerRegisterType[j]);
+        }
 
         if (instructionInfo.usage.size() != 0)
         {

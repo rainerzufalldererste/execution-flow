@@ -58,13 +58,52 @@
 
 ////////////////////////////////////////////////////////////////////////////////
 
+static const char *CoreArchitectureLookup[] =
+{
+  nullptr,
+  "alderlake",
+  "broadwell",
+  "cannonlake",
+  "cascadelake",
+  "cooperlake",
+  "emeraldrapids",
+  "goldmont",
+  "goldmont_plus",
+  "grandridge",
+  "graniterapids",
+  "haswell",
+  "icelake_client",
+  "icelake_server",
+  "ivybridge",
+  "meteorlake",
+  "raptorlake",
+  "rocketlake",
+  "sandybridge",
+  "sapphirerapids",
+  "sierraforest",
+  "silvermont",
+  "skylake",
+  "skx",
+  "skylake_avx512",
+  "tigerlake",
+  "tremont",
+  "znver1",
+  "znver2",
+  "znver3",
+  "znver4",
+};
+
+static_assert(std::size(CoreArchitectureLookup) == (size_t)CoreArchitecture::_Size);
+
+////////////////////////////////////////////////////////////////////////////////
+
 class FlowView final : public llvm::mca::HWEventListener
 {
 private:
   PortUsageFlow *pFlow; // initialized in the constructor.
   size_t relevantIteration; // initialized in the constructor.
   size_t instructionClock = 0;
-  llvm::SmallDenseMap<std::pair<unsigned, unsigned>, size_t, 32U> llvmResource2ListedResourceIdx;
+  llvm::SmallDenseMap<std::pair<uint64_t, uint64_t>, size_t, 32U> llvmResource2ListedResourceIdx;
   bool hasFirstObservedInstructionClock = false;
   size_t firstObservedInstructionClock = 0;
   llvm::SmallVector<bool> isRegisterFileRelevant;
@@ -89,9 +128,9 @@ public:
 
 #pragma optimize ("", off)
 
-bool execution_flow_create(const void *pAssembledBytes, const size_t assembledBytesLength, PortUsageFlow *pFlow, const size_t relevantIteration)
+bool execution_flow_create(const void *pAssembledBytes, const size_t assembledBytesLength, PortUsageFlow *pFlow, const CoreArchitecture arch, const size_t iterations, const size_t relevantIteration)
 {
-  if (pFlow == nullptr)
+  if (pFlow == nullptr || pAssembledBytes == nullptr || (uint64_t)arch > (uint64_t)CoreArchitecture::_Size || relevantIteration >= iterations || iterations > UINT32_MAX)
     return false;
 
   static llvm::mc::RegisterMCTargetOptionsFlags targetOptionFlags;
@@ -117,7 +156,12 @@ bool execution_flow_create(const void *pAssembledBytes, const size_t assembledBy
   llvm::MCTargetOptions targetOptions(llvm::mc::InitMCTargetOptionsFromFlags());
   std::unique_ptr<llvm::MCRegisterInfo> registerInfo(pTarget->createMCRegInfo(targetTriple.str()));
   std::unique_ptr<llvm::MCAsmInfo> asmInfo(pTarget->createMCAsmInfo(*registerInfo, targetTriple.str(), targetOptions));
-  std::unique_ptr<llvm::MCSubtargetInfo> subtargetInfo(pTarget->createMCSubtargetInfo(targetTriple.str(), llvm::sys::getHostCPUName(), ""));
+  std::unique_ptr<llvm::MCSubtargetInfo> subtargetInfo;
+  
+  if (arch == CoreArchitecture::_CurrentCPU)
+    subtargetInfo = std::unique_ptr<llvm::MCSubtargetInfo>(pTarget->createMCSubtargetInfo(targetTriple.str(), llvm::sys::getHostCPUName(), ""));
+  else
+    subtargetInfo = std::unique_ptr<llvm::MCSubtargetInfo>(pTarget->createMCSubtargetInfo(targetTriple.str(), CoreArchitectureLookup[(size_t)arch], ""));
 
   // Create Machine Code Context from the triple.
   llvm::MCContext context(targetTriple, asmInfo.get(), registerInfo.get(), subtargetInfo.get());
@@ -195,7 +239,7 @@ bool execution_flow_create(const void *pAssembledBytes, const size_t assembledBy
   }
 
   // Create source for the `Pipeline` & `HWEventListener`.
-  llvm::mca::CircularSourceMgr source(mcaInstructions, relevantIteration + 1);
+  llvm::mca::CircularSourceMgr source(mcaInstructions, (uint32_t)iterations);
 
   // Create custom behaviour.
   std::unique_ptr<llvm::mca::CustomBehaviour> customBehaviour(pTarget->createCustomBehaviour(*subtargetInfo, source, *instructionInfo));
@@ -223,7 +267,7 @@ bool execution_flow_create(const void *pAssembledBytes, const size_t assembledBy
 
     for (size_t i = 1; i < resourceTypeCount; i++) // index 0 appears to be used as `null`-index.
     {
-      const llvm::MCProcResourceDesc *pResource = schedulerModel.getProcResource(i);
+      const llvm::MCProcResourceDesc *pResource = schedulerModel.getProcResource((uint32_t)i);
       const size_t perResourcePortCount = pResource->NumUnits;
 
       if (perResourcePortCount == 0 || pResource->SubUnitsIdxBegin != nullptr) // if `SubUnitsIdxBegin` isn't `nullptr`, there'll be another resource that doesn't indicate *all* of the resources, but the sub-resources individually.
@@ -245,6 +289,7 @@ bool execution_flow_create(const void *pAssembledBytes, const size_t assembledBy
   }
 
   // Get Register Types and Counts from scheduler extra info.
+  if (schedulerModel.hasExtraProcessorInfo())
   {
     const llvm::MCExtraProcessorInfo &extraInfo = schedulerModel.getExtraProcessorInfo();
     

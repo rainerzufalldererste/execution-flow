@@ -37,6 +37,46 @@
 
 ////////////////////////////////////////////////////////////////////////////////
 
+enum class CoreArchitecture
+{
+  _CurrentCPU,
+
+  Alderlake,
+  Broadwell,
+  Cannonlake,
+  Cascadelake,
+  Cooperlake,
+  EmeraldRapids,
+  Goldmont,
+  GoldmontPlus,
+  GrandRidge,
+  GraniteRapids,
+  Haswell,
+  IcelakeClient,
+  IcelakeServer,
+  IvyBridge,
+  Meteorlake,
+  Raptorlake,
+  Rocketlake,
+  Sandybridge,
+  SapphireRapids,
+  Sierraforest,
+  Silvermont,
+  SkylakeClient,
+  SkylakeX,
+  SkylakeServer,
+  Tigerlake,
+  Tremont,
+  Zen1,
+  Zen2,
+  Zen3,
+  Zen4,
+
+  _Size
+};
+
+////////////////////////////////////////////////////////////////////////////////
+
 struct ResourceInfo
 {
   size_t resourceTypeIndex, resourceTypeSubIndex;
@@ -100,6 +140,6 @@ struct PortUsageFlow
 
 ////////////////////////////////////////////////////////////////////////////////
 
-bool execution_flow_create(const void *pAssembledBytes, const size_t assembledBytesLength, PortUsageFlow *pFlow, const size_t relevantIteration);
+bool execution_flow_create(const void *pAssembledBytes, const size_t assembledBytesLength, PortUsageFlow *pFlow, const CoreArchitecture arch, const size_t iterations, const size_t relevantIteration);
 
 #endif // execution_flow_h__
