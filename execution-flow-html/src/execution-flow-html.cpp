@@ -126,8 +126,8 @@ int main(int argc, char **pArgv)
             }
             
             .laneinst {
-                --colorA: hsl(calc(var(--lane) * 0.41 * 360deg) 50% 50%);
-                --colorB: hsl(calc(var(--lane) * 0.41 * 360deg + 50deg) 30% 40%);
+                --colorA: hsl(calc(var(--lane) * 0.41 * 360deg - var(--iter) * 0.2 * 360deg) 50% 50%);
+                --colorB: hsl(calc(var(--lane) * 0.41 * 360deg + 50deg - var(--iter) * 0.2 * 360deg) 30% 40%);
                 content: ' ';
                 width: 20pt;
                 height: calc(20pt * var(--len));
@@ -268,15 +268,13 @@ int main(int argc, char **pArgv)
             }
             
             span.asm {
-              color: #aaa;
+              --exclim: calc(min(var(--exec), 20) / 20);
+              --exc2: calc(1 - (1 - var(--exclim)) * (1 - var(--exclim)));
+              color: hsl(calc(125deg - var(--exc2) * 80deg), calc(var(--exc2) * 100%), calc(40% + var(--exc2) * 25%));
             }
 
             span.linenum.highlighted {
               color: #996b66;
-            }
-
-            span.asm.highlighted {
-              color: #ffcaca;
             }
 
             span.asm.null {
@@ -322,16 +320,16 @@ int main(int argc, char **pArgv)
             }
 
             span.rsrc {
-                --colorA: hsl(calc(var(--lane) * 0.41 * 360deg) 50% 50%);
-                --colorB: hsl(calc(var(--lane) * 0.41 * 360deg) 80% 80%);
-                --colorC: hsl(calc(var(--lane) * 0.41 * 360deg) 20% 20%);
-                border: solid 1.5pt var(--colorA);
-                color: var(--colorB);
-                padding: 2pt 5pt;
-                background: var(--colorC);
-                border-radius: 10pt;
-                display: inline-block;
-                margin: 4pt 4pt 1pt 0pt;
+              --colorA: hsl(calc(var(--lane) * 0.41 * 360deg) 90% 70%);
+              --colorB: hsl(calc(var(--lane) * 0.41 * 360deg) 30% 30%);
+              --colorC: hsl(calc(var(--lane) * 0.41 * 360deg + 40deg) 40% 40%);
+              border: solid 1.5pt var(--colorA);
+              color: #fff;
+              padding: 2pt 5pt;
+              background: linear-gradient(180deg, var(--colorB), var(--colorC));
+              border-radius: 10pt;
+              display: inline-block;
+              margin: 4pt 4pt 1pt 0pt;
             }
 
             div.spacer {
@@ -379,7 +377,7 @@ int main(int argc, char **pArgv)
 
         const char *subVariant = instructionInfo.bottleneckInfo.size() > 0 ? " highlighted" : (instructionInfo.usage.size() == 0 && instructionInfo.clockExecuted - instructionInfo.clockIssued == 0 ? " null" : "");
 
-        fprintf(pOutFile, "<div class=\"disasmline\" idx=\"%" PRIu64 "\"><span class=\"linenum%s\">0x%08" PRIX64 "&emsp;</span><span class=\"asm%s\">%s&emsp;</span><div class=\"extra_info\">", instructionIndex, subVariant, virtualAddress + addressDisplayOffset, subVariant, disasmBuffer);
+        fprintf(pOutFile, "<div class=\"disasmline\" idx=\"%" PRIu64 "\"><span class=\"linenum%s\">0x%08" PRIX64 "&emsp;</span><span class=\"asm%s\" style=\"--exec: %" PRIu64 ";\">%s</span><div class=\"extra_info\">", instructionIndex, subVariant, virtualAddress + addressDisplayOffset, subVariant, instructionInfo.clockExecuted - instructionInfo.clockIssued, disasmBuffer);
 
         fprintf(pOutFile, "<div class=\"uops\">%" PRIu64 " uOps</div>", instructionInfo.uOpCount);
         fprintf(pOutFile, "<div class=\"cycleInfo\">dispatched: %" PRIu64 " cycles</div>", instructionInfo.clockPending - instructionInfo.clockDispatched);
@@ -435,14 +433,18 @@ int main(int argc, char **pArgv)
 
         for (const auto &_inst : flow.instructionExecutionInfo)
         {
+          size_t iterationIndex = (size_t)-1;
+
           for (const auto &_iter : _inst.perIteration)
           {
+            ++iterationIndex;
+
             for (const auto &_port : _inst.usage)
             {
               if (_port.resourceIndex != i)
                 continue;
 
-              fprintf(pOutFile, "<div class=\"laneinst\" title=\"%s\" idx=\"%" PRIu64 "\" style=\"--off: %" PRIu64 "; --len: %" PRIu64 "; --idx: %" PRIu64 "; --lane: %" PRIu64 ";\"></div><div class=\"instex\" idx=\"%" PRIu64 "\">\n", disassemblyLines[_inst.instructionIndex].c_str(), _inst.instructionIndex, _iter.clockIssued, _iter.clockExecuted - _iter.clockIssued, _inst.instructionIndex, i, _inst.instructionIndex);
+              fprintf(pOutFile, "<div class=\"laneinst\" title=\"%s (Iteration %" PRIu64 ")\" idx=\"%" PRIu64 "\" iter=\"%" PRIu64 "\" style=\"--iter: %" PRIu64 "; --off: %" PRIu64 "; --len: %" PRIu64 "; --idx: %" PRIu64 "; --lane: %" PRIu64 ";\"></div><div class=\"instex\" idx=\"%" PRIu64 "\">\n", disassemblyLines[_inst.instructionIndex].c_str(), iterationIndex + 1, _inst.instructionIndex, iterationIndex, iterationIndex, _iter.clockIssued, _iter.clockExecuted - _iter.clockIssued, _inst.instructionIndex, i, _inst.instructionIndex);
               fprintf(pOutFile, "\t<div class=\"inst dispatched\" style=\"--s: %" PRIu64 "; --l: %" PRIu64 ";\"></div>\n", _iter.clockDispatched, _iter.clockPending - _iter.clockDispatched);
               fprintf(pOutFile, "\t<div class=\"inst pending\" style=\"--s: %" PRIu64 "; --l: %" PRIu64 ";\"></div>\n", _iter.clockPending, _iter.clockReady - _iter.clockPending);
               fprintf(pOutFile, "\t<div class=\"inst ready\" style=\"--s: %" PRIu64 "; --l: %" PRIu64 ";\"></div>\n", _iter.clockReady, _iter.clockIssued - _iter.clockReady);
