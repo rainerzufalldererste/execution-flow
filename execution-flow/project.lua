@@ -30,7 +30,7 @@ project(ProjectName)
   files { "include/**.h", "include/**.hh", "include/**.hpp", "include/**.inl" }
   files { "project.lua" }
   
-  includedirs { "include", "include/**" }
+  includedirs { "include", "include/**", "src", "src/**" }
   includedirs { "../3rdParty/llvm/include" }
 
   filter { "configurations:Debug", "system:Windows" }

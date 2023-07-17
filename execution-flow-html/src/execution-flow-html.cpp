@@ -394,7 +394,7 @@ int main(int argc, char **pArgv)
 
         const auto &instructionInfo = flow.instructionExecutionInfo[instructionIndex];
 
-        const char *subVariant = instructionInfo.bottleneckInfo.size() > 0 ? " highlighted" : (instructionInfo.usage.size() == 0 && instructionInfo.clockExecuted - instructionInfo.clockIssued == 0 ? " null" : "");
+        const char *subVariant = instructionInfo.stallInfo.size() > 0 ? " highlighted" : (instructionInfo.usage.size() == 0 && instructionInfo.clockExecuted - instructionInfo.clockIssued == 0 ? " null" : "");
 
         fprintf(pOutFile, "<div class=\"disasmline\" idx=\"%" PRIu64 "\"><span class=\"linenum%s\">0x%08" PRIX64 "&emsp;</span><span class=\"asm%s\" style=\"--exec: %" PRIu64 ";\">%s</span><div class=\"extra_info\">", instructionIndex, subVariant, virtualAddress + addressDisplayOffset, subVariant, instructionInfo.clockExecuted - instructionInfo.clockIssued, disasmBuffer);
 
@@ -426,7 +426,7 @@ int main(int argc, char **pArgv)
           fputs("</div>\n", pOutFile);
         }
 
-        for (const auto &_b : instructionInfo.bottleneckInfo)
+        for (const auto &_b : instructionInfo.stallInfo)
           fprintf(pOutFile, "<div class=\"bottleneck\">%s</div>", _b.c_str());
 
         fputs("</div></div>\n", pOutFile);

@@ -129,7 +129,7 @@ struct BasicInstructionInfo
 struct InstructionInfo : BasicInstructionInfo
 {
   size_t instructionIndex, instructionByteOffset, uOpCount;
-  std::vector<std::string> bottleneckInfo;
+  std::vector<std::string> stallInfo;
   std::vector<size_t> physicalRegistersObstructedPerRegisterType;
   std::vector<BasicInstructionInfo> perIteration;
 
