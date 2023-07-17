@@ -119,7 +119,20 @@ int main(int argc, char **pArgv)
                 font-family: Consolas, monospace;
                 overflow-x: hidden;
             }
-
+            
+            ::-webkit-scrollbar {
+                width: 5pt;
+                background: #3a3a3a;
+            }
+            
+            ::-webkit-scrollbar-track {
+                background: rgba(1, 1, 1, 0);
+            }
+            
+            ::-webkit-scrollbar-thumb {
+                background: #a0a0a0;
+            }
+            
             table.flow tr {
               line-break: anywhere;
               text-align: justify;
@@ -313,23 +326,29 @@ int main(int argc, char **pArgv)
 
             .bottleneck {
               color: #ff7171;
+              font-size: 82%;
+              display: block;
+              margin: 3pt 0;
             }
 
             .registers {
-              color: #959595;
+              color: #ccc;
+              font-size: 82%;
+              display: block;
+              margin: 5pt 0;
             }
 
             span.rsrc {
-              --colorA: hsl(calc(var(--lane) * 0.41 * 360deg) 90% 70%);
+              --colorA: hsl(calc(var(--lane) * 0.41 * 360deg) 90% 80%);
               --colorB: hsl(calc(var(--lane) * 0.41 * 360deg) 30% 30%);
               --colorC: hsl(calc(var(--lane) * 0.41 * 360deg + 40deg) 40% 40%);
-              border: solid 1.5pt var(--colorA);
+              border: solid 1pt var(--colorA);
               color: #fff;
-              padding: 2pt 5pt;
+              padding: 2pt 8pt;
               background: linear-gradient(180deg, var(--colorB), var(--colorC));
               border-radius: 10pt;
               display: inline-block;
-              margin: 4pt 4pt 1pt 0pt;
+              margin: 4pt 4pt 2pt 0pt;
             }
 
             div.spacer {

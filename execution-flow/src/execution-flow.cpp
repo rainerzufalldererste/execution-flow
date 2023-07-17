@@ -466,31 +466,31 @@ void FlowView::onEvent(const llvm::mca::HWStallEvent &evnt)
   switch (evnt.Type)
   {
   case llvm::mca::HWStallEvent::RegisterFileStall:
-    instructionInfo.bottleneckInfo.emplace_back(std::string("Iteration ") + std::to_string(runIndex + 1) + ": Register Unavailable");
+    instructionInfo.bottleneckInfo.emplace_back(std::string("Stall in Loop ") + std::to_string(runIndex) + ": Register Unavailable");
     break;
 
   case llvm::mca::HWStallEvent::RetireControlUnitStall:
-    instructionInfo.bottleneckInfo.emplace_back(std::string("Iteration ") + std::to_string(runIndex + 1) + ": Retire Tokens Unavailable");
+    instructionInfo.bottleneckInfo.emplace_back(std::string("Stall in Loop ") + std::to_string(runIndex) + ": Retire Tokens Unavailable");
     break;
 
   case llvm::mca::HWStallEvent::DispatchGroupStall:
-    instructionInfo.bottleneckInfo.emplace_back(std::string("Iteration ") + std::to_string(runIndex + 1) + ": Static Restrictions on the Dispatch Group");
+    instructionInfo.bottleneckInfo.emplace_back(std::string("Stall in Loop ") + std::to_string(runIndex) + ": Static Restrictions on the Dispatch Group");
     break;
 
   case llvm::mca::HWStallEvent::SchedulerQueueFull:
-    instructionInfo.bottleneckInfo.emplace_back(std::string("Iteration ") + std::to_string(runIndex + 1) + ": Scheduler Queue Full");
+    instructionInfo.bottleneckInfo.emplace_back(std::string("Stall in Loop ") + std::to_string(runIndex) + ": Scheduler Queue Full");
     break;
 
   case llvm::mca::HWStallEvent::LoadQueueFull:
-    instructionInfo.bottleneckInfo.emplace_back(std::string("Iteration ") + std::to_string(runIndex + 1) + ": Load Queue Full");
+    instructionInfo.bottleneckInfo.emplace_back(std::string("Stall in Loop ") + std::to_string(runIndex) + ": Load Queue Full");
     break;
 
   case llvm::mca::HWStallEvent::StoreQueueFull:
-    instructionInfo.bottleneckInfo.emplace_back(std::string("Iteration ") + std::to_string(runIndex + 1) + ": Store Queue Full");
+    instructionInfo.bottleneckInfo.emplace_back(std::string("Stall in Loop ") + std::to_string(runIndex) + ": Store Queue Full");
     break;
 
   case llvm::mca::HWStallEvent::CustomBehaviourStall:
-    instructionInfo.bottleneckInfo.emplace_back(std::string("Iteration ") + std::to_string(runIndex + 1) + ": Structural Hazard");
+    instructionInfo.bottleneckInfo.emplace_back(std::string("Stall in Loop ") + std::to_string(runIndex) + ": Structural Hazard");
     break;
   }
 }
