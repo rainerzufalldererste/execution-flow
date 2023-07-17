@@ -28,6 +28,12 @@
 
 #include "FlowView.h"
 
+#include "llvm/MCA/Support.h"
+
+////////////////////////////////////////////////////////////////////////////////
+
+static void _AddResourcePressure(PortUsageFlow *pFlow, const size_t iteration, const size_t instructionIdx, const size_t instructionsPerIteration, const size_t firstMatchingPortIndex, const size_t resourceType, const std::string &resourceName, const llvm::mca::Instruction &instruction);
+
 ////////////////////////////////////////////////////////////////////////////////
 
 void FlowView::onEvent(const llvm::mca::HWInstructionEvent &evnt)
@@ -157,6 +163,39 @@ void FlowView::onEvent(const llvm::mca::HWInstructionEvent &evnt)
       instructionInfo.perIteration[runIndex].usage.push_back(ResourcePressureInfo(portIndex, (double)resourceUsage.second));
     }
 
+    const llvm::mca::Instruction *pInstruction = evnt.IR.getInstruction();
+
+    // Handle Resource Pressure.
+    {
+      const uint64_t criticalResources = pInstruction->getCriticalResourceMask();
+
+      for (size_t bit = 0; bit < 64; bit++)
+      {
+        const uint64_t mask = (uint64_t)1 << bit;
+
+        if (!(criticalResources & mask))
+          continue;
+
+        const uint32_t parentResourceIndex = llvm::mca::getResourceStateIndex(mask);
+        const llvm::MCProcResourceDesc *pResource = schedulerModel.getProcResource(parentResourceIndex);
+
+        size_t internalFirstPortIndex = (size_t)-1;
+        size_t internalResourceType = (size_t)-1;
+        const llvm::mca::ResourceRef resourceReference(parentResourceIndex, 1);
+
+        if (llvmResource2ListedResourceIdx.contains(resourceReference))
+        {
+          internalFirstPortIndex = llvmResource2ListedResourceIdx[resourceReference];
+          internalResourceType = pFlow->ports[internalFirstPortIndex].resourceTypeIndex;
+        }
+
+        _AddResourcePressure(pFlow, runIndex, instructionIndex, instructionCount, internalFirstPortIndex, internalResourceType, pResource->Name, *pInstruction);
+      }
+    }
+
+    const llvm::mca::CriticalDependency &regDep = pInstruction->getCriticalRegDep();
+    const llvm::mca::CriticalDependency &memDep = pInstruction->getCriticalMemDep();
+
     break;
   }
   }
@@ -217,4 +256,13 @@ void FlowView::addLLVMResourceToPortIndexLookup(const std::pair<std::pair<size_t
 void FlowView::addRegisterFileRelevancy(const bool isRelevant)
 {
   isRegisterFileRelevant.push_back(isRelevant);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+static void _AddResourcePressure(PortUsageFlow *pFlow, const size_t iteration, const size_t instructionIdx, const size_t instructionsPerIteration, const size_t firstMatchingPortIndex, const size_t resourceType, const std::string &resourceName, const llvm::mca::Instruction &instruction)
+{
+  const auto &pressureContainer = pFlow->instructionExecutionInfo[instructionIdx].perIteration[iteration].registerPressure;
+
+  
 }

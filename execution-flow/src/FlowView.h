@@ -48,10 +48,12 @@ private:
   bool hasFirstObservedInstructionClock = false;
   size_t firstObservedInstructionClock = 0;
   llvm::SmallVector<bool> isRegisterFileRelevant;
+  const llvm::MCSchedModel &schedulerModel;
 
 public:
-  inline FlowView(PortUsageFlow *pFlow, const size_t relevantIteration) :
+  inline FlowView(PortUsageFlow *pFlow, const llvm::MCSchedModel &schedulerModel, const size_t relevantIteration) :
     pFlow(pFlow),
+    schedulerModel(schedulerModel),
     relevantIteration(relevantIteration)
   { }
 

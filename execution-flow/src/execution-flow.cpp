@@ -229,7 +229,7 @@ bool execution_flow_create(const void *pAssembledBytes, const size_t assembledBy
   std::unique_ptr<llvm::mca::Pipeline> pipeline(mcaContext.createDefaultPipeline(pipelineOptions, source, *customBehaviour));
 
   // Create event handler to observe simulated hardware events.
-  FlowView flowView(&flow, relevantIteration);
+  FlowView flowView(&flow, schedulerModel, relevantIteration);
   pipeline->addEventListener(&flowView);
 
   // Get Stages from Scheduler model.
