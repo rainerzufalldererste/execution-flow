@@ -141,22 +141,26 @@ struct ResourceTypeDependencyInfo
   size_t resourceTypeIndex; // if this is -1 we don't have the resource / resource type in ports.
   size_t firstMatchingPortIndex; // the first port with the given resource type. (there may be multiple ports with this resource type)
   std::string resourceName;
+  size_t pressureCycles;
   std::optional<DependencyOrigin> origin;
 
   inline ResourceTypeDependencyInfo(const size_t resourceType, const size_t matchingPort, const std::string &name) :
     resourceTypeIndex(resourceType),
     firstMatchingPortIndex(matchingPort),
-    resourceName(name)
+    resourceName(name),
+    pressureCycles(0)
   { }
 };
 
 struct DependencyInfo
 {
   size_t totalPressureCycles; // may have accumulated over multiple dependencies.
+  size_t selfPressureCycles; // just the ones for this dependency.
   std::optional<DependencyOrigin> origin;
   
   inline DependencyInfo() :
-    totalPressureCycles(0)
+    totalPressureCycles(0),
+    selfPressureCycles(0)
   { }
 };
 

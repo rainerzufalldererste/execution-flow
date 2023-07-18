@@ -228,8 +228,11 @@ bool execution_flow_create(const void *pAssembledBytes, const size_t assembledBy
   // Create and fill the pipeline with the source.
   std::unique_ptr<llvm::mca::Pipeline> pipeline(mcaContext.createDefaultPipeline(pipelineOptions, source, *customBehaviour));
 
+  // Create instruction printer for the FlowView.
+  std::unique_ptr<llvm::MCInstPrinter> instructionPrinter(pTarget->createMCInstPrinter(targetTriple, 1, *asmInfo, *instructionInfo, *registerInfo));
+
   // Create event handler to observe simulated hardware events.
-  FlowView flowView(&flow, schedulerModel, relevantIteration);
+  FlowView flowView(&flow, schedulerModel, *instructionPrinter, relevantIteration);
   pipeline->addEventListener(&flowView);
 
   // Get Stages from Scheduler model.
