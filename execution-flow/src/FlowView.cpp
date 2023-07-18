@@ -32,10 +32,6 @@
 
 ////////////////////////////////////////////////////////////////////////////////
 
-static void _AddResourcePressure(PortUsageFlow *pFlow, const size_t iteration, const size_t instructionIdx, const size_t instructionsPerIteration, const size_t firstMatchingPortIndex, const size_t resourceType, const std::string &resourceName, const llvm::mca::Instruction &instruction);
-
-////////////////////////////////////////////////////////////////////////////////
-
 void FlowView::onEvent(const llvm::mca::HWInstructionEvent &evnt)
 {
   const size_t instructionCount = pFlow->instructionExecutionInfo.size();
@@ -79,6 +75,9 @@ void FlowView::onEvent(const llvm::mca::HWInstructionEvent &evnt)
 
     instructionInfo.perIteration[runIndex].clockDispatched = instructionClock;
 
+    // Keep this instruction in-flight till it's been executed.
+    inFlightInstructions.insert(std::make_pair(std::make_pair(runIndex, instructionIndex), true));
+
     break;
   }
 
@@ -104,6 +103,9 @@ void FlowView::onEvent(const llvm::mca::HWInstructionEvent &evnt)
       instructionInfo.perIteration.resize(runIndex + 1);
 
     instructionInfo.perIteration[runIndex].clockExecuted = instructionClock;
+
+    inFlightInstructions.erase(std::make_pair(runIndex, instructionIndex));
+
     break;
   }
 
@@ -189,7 +191,7 @@ void FlowView::onEvent(const llvm::mca::HWInstructionEvent &evnt)
           internalResourceType = pFlow->ports[internalFirstPortIndex].resourceTypeIndex;
         }
 
-        _AddResourcePressure(pFlow, runIndex, instructionIndex, instructionCount, internalFirstPortIndex, internalResourceType, pResource->Name, *pInstruction);
+        addResourcePressure(instructionInfo, runIndex, internalFirstPortIndex, internalResourceType, pResource->Name, *pInstruction);
       }
     }
 
@@ -245,7 +247,33 @@ void FlowView::onEvent(const llvm::mca::HWStallEvent &evnt)
 
 void FlowView::onEvent(const llvm::mca::HWPressureEvent &evnt)
 {
-  (void)evnt;
+  const size_t instructionCount = pFlow->instructionExecutionInfo.size();
+  assert(instructionCount > 0 && "There should already be a reference to all instructions in this vector.");
+
+  for (const llvm::mca::InstRef &_inst : evnt.AffectedInstructions)
+  {
+    const size_t instructionIndex = _inst.getSourceIndex() & instructionCount;
+    const size_t runIndex = _inst.getSourceIndex() / instructionCount;
+
+    InstructionInfo &instruction = pFlow->instructionExecutionInfo[instructionIndex];
+    LoopInstructionInfo &occurence = instruction.perIteration[runIndex];
+
+    switch (evnt.Reason)
+    {
+    case llvm::mca::HWPressureEvent::RESOURCES:
+      // TODO: Only apply pressure for cases where mask matches the instructions critical mask.
+      occurence.resourcePressure.totalPressureCycles++;
+      break;
+
+    case llvm::mca::HWPressureEvent::REGISTER_DEPS:
+      occurence.registerPressure.totalPressureCycles++;
+      break;
+
+    case llvm::mca::HWPressureEvent::MEMORY_DEPS:
+      occurence.memoryPressure.totalPressureCycles++;
+      break;
+    }
+  }
 }
 
 void FlowView::addLLVMResourceToPortIndexLookup(const std::pair<std::pair<size_t, size_t>, size_t> &keyValuePair)
@@ -260,9 +288,22 @@ void FlowView::addRegisterFileRelevancy(const bool isRelevant)
 
 ////////////////////////////////////////////////////////////////////////////////
 
-static void _AddResourcePressure(PortUsageFlow *pFlow, const size_t iteration, const size_t instructionIdx, const size_t instructionsPerIteration, const size_t firstMatchingPortIndex, const size_t resourceType, const std::string &resourceName, const llvm::mca::Instruction &instruction)
+void FlowView::addResourcePressure(InstructionInfo &info, const size_t iterationIndex, const size_t firstMatchingPortIndex, const size_t resourceType, const std::string &resourceName, const llvm::mca::Instruction &instruction)
 {
-  const auto &pressureContainer = pFlow->instructionExecutionInfo[instructionIdx].perIteration[iteration].registerPressure;
+  const size_t instructionCount = pFlow->instructionExecutionInfo.size();
+  ResourceDependencyInfo &pressureContainer = info.perIteration[iterationIndex].resourcePressure;
 
-  
+  // TODO: Do something to distinguish between *confirmed* and *unconfirmed* dependencies (that caused or didn't cause pressure).
+  pressureContainer.associatedResources.emplace_back(resourceType, firstMatchingPortIndex, resourceName);
+
+  if (lastResourceUser.size() < pFlow->ports.size())
+    lastResourceUser.resize(pFlow->ports.size(), std::make_pair((size_t)-1, (size_t)-1));
+
+  if (lastResourceUser[resourceType].first != (size_t)-1)
+  {
+    ResourceTypeDependencyInfo &dependency = pressureContainer.associatedResources.back();
+    dependency.origin = DependencyOrigin(lastResourceUser[resourceType].first, lastResourceUser[resourceType].second);
+  }
+
+  lastResourceUser[resourceType] = std::make_pair(iterationIndex, info.instructionIndex);
 }

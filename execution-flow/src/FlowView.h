@@ -50,6 +50,13 @@ private:
   llvm::SmallVector<bool> isRegisterFileRelevant;
   const llvm::MCSchedModel &schedulerModel;
 
+  llvm::SmallVector<std::pair<size_t, size_t>> lastResourceUser; // internalResourceType => (runIndex, instructionIndex).
+
+  // TODO: this should be a pool, not a map.
+  llvm::DenseMap<std::pair<size_t, size_t>, bool> inFlightInstructions; // (runIndex, instruction index), bool is meaningless.
+
+  void addResourcePressure(InstructionInfo &info, const size_t iterationIndex, const size_t firstMatchingPortIndex, const size_t resourceType, const std::string &resourceName, const llvm::mca::Instruction &instruction);
+
 public:
   inline FlowView(PortUsageFlow *pFlow, const llvm::MCSchedModel &schedulerModel, const size_t relevantIteration) :
     pFlow(pFlow),
