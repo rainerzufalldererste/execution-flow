@@ -166,26 +166,26 @@ void FlowView::onEvent(const llvm::mca::HWInstructionEvent &evnt)
     }
 
     const llvm::mca::Instruction *pInstruction = evnt.IR.getInstruction();
-
+    
     // Handle Resource Dependency.
     {
       const uint64_t criticalResources = pInstruction->getCriticalResourceMask();
-
+    
       for (size_t bit = 0; bit < 64; bit++)
       {
         const uint64_t mask = (uint64_t)1 << bit;
-
+    
         if (!(criticalResources & mask))
           continue;
-
+    
         addResourcePressure(instructionInfo, runIndex, mask, *pInstruction, false);
       }
     }
-
+    
     // Handle Register Dependency.
     {
       const llvm::mca::CriticalDependency &registerDependency = pInstruction->getCriticalRegDep();
-
+    
       if (registerDependency.Cycles != 0)
         addRegisterPressure(instructionInfo, runIndex, (size_t)registerDependency.IID / instructionCount, (size_t)registerDependency.IID % instructionCount, registerDependency.RegID, registerDependency.Cycles);
     }
@@ -193,7 +193,7 @@ void FlowView::onEvent(const llvm::mca::HWInstructionEvent &evnt)
     // Handle Memory Dependency.
     {
       const llvm::mca::CriticalDependency &memoryDependency = pInstruction->getCriticalMemDep();
-
+    
       if (memoryDependency.Cycles != 0)
         addMemoryPressure(instructionInfo, runIndex, (size_t)memoryDependency.IID / instructionCount, (size_t)memoryDependency.IID % instructionCount, memoryDependency.Cycles);
     }
@@ -249,45 +249,45 @@ void FlowView::onEvent(const llvm::mca::HWPressureEvent &evnt)
 {
   const size_t instructionCount = pFlow->instructionExecutionInfo.size();
   assert(instructionCount > 0 && "There should already be a reference to all instructions in this vector.");
-
+  
   for (const llvm::mca::InstRef &_inst : evnt.AffectedInstructions)
   {
     const size_t instructionIndex = _inst.getSourceIndex() % instructionCount;
     const size_t runIndex = _inst.getSourceIndex() / instructionCount;
-
+  
     InstructionInfo &instructionInfo = pFlow->instructionExecutionInfo[instructionIndex];
     
     if (instructionInfo.perIteration.size() <= runIndex)
       instructionInfo.perIteration.resize(runIndex + 1);
-
+  
     LoopInstructionInfo &occurence = instructionInfo.perIteration[runIndex];
-
+  
     switch (evnt.Reason)
     {
     case llvm::mca::HWPressureEvent::RESOURCES:
     {
       occurence.resourcePressure.totalPressureCycles++;
-
+  
       const llvm::mca::Instruction *pMcaInstruction = _inst.getInstruction();
       const size_t criticalResources = pMcaInstruction->getCriticalResourceMask() & evnt.ResourceMask;
-
+  
       for (size_t bit = 0; bit < 64; bit++)
       {
         const uint64_t mask = (uint64_t)1 << bit;
-
+  
         if (!(criticalResources & mask))
           continue;
-
+  
         addResourcePressure(instructionInfo, runIndex, mask, *pMcaInstruction, true);
       }
-
+  
       break;
     }
-
+  
     case llvm::mca::HWPressureEvent::REGISTER_DEPS:
       occurence.registerPressure.totalPressureCycles++;
       break;
-
+  
     case llvm::mca::HWPressureEvent::MEMORY_DEPS:
       occurence.memoryPressure.totalPressureCycles++;
       break;
@@ -311,20 +311,20 @@ void FlowView::addResourcePressure(InstructionInfo &info, const size_t iteration
 {
   const uint32_t parentResourceIndex = llvm::mca::getResourceStateIndex(llvmResourceMask);
   const llvm::MCProcResourceDesc *pResource = schedulerModel.getProcResource(parentResourceIndex);
-
+  
   size_t firstMatchingPortIndex = (size_t)-1;
   size_t resourceType = (size_t)-1;
   const llvm::mca::ResourceRef resourceReference(parentResourceIndex, 1);
-
+  
   if (llvmResource2ListedResourceIdx.contains(resourceReference))
   {
     firstMatchingPortIndex = llvmResource2ListedResourceIdx[resourceReference];
     resourceType = pFlow->ports[firstMatchingPortIndex].resourceTypeIndex;
   }
-
+  
   ResourceDependencyInfo &pressureContainer = info.perIteration[iterationIndex].resourcePressure;
   ResourceTypeDependencyInfo *pDependency = nullptr;
-
+  
   for (auto &_dep : pressureContainer.associatedResources)
   {
     if (_dep.resourceTypeIndex == resourceType)
@@ -333,26 +333,26 @@ void FlowView::addResourcePressure(InstructionInfo &info, const size_t iteration
       break;
     }
   }
-
+  
   if (pDependency == nullptr)
   {
     pressureContainer.associatedResources.emplace_back(resourceType, firstMatchingPortIndex, pResource->Name);
     pDependency = &pressureContainer.associatedResources.back();
   }
-
+  
   if (fromPressureEvent)
   {
     pDependency->pressureCycles++;
   }
   else
   {
-    if (lastResourceUser.size() < pFlow->ports.size())
-      lastResourceUser.resize(pFlow->ports.size(), std::make_pair((size_t)-1, (size_t)-1));
-
-    if (lastResourceUser[resourceType].first != (size_t)-1)
-      pDependency->origin = DependencyOrigin(lastResourceUser[resourceType].first, lastResourceUser[resourceType].second);
-
-    lastResourceUser[resourceType] = std::make_pair(iterationIndex, info.instructionIndex);
+    if (lastResourceUser.size() <= parentResourceIndex)
+      lastResourceUser.resize(parentResourceIndex + 1, std::make_pair((size_t)-1, (size_t)-1));
+  
+    if (lastResourceUser[parentResourceIndex].first != (size_t)-1)
+      pDependency->origin = DependencyOrigin(lastResourceUser[parentResourceIndex].first, lastResourceUser[parentResourceIndex].second);
+  
+    lastResourceUser[parentResourceIndex] = std::make_pair(iterationIndex, info.instructionIndex);
   }
 }
 
