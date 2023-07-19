@@ -371,6 +371,10 @@ int main(int argc, char **pArgv)
               color: #85b1a7;
             }
             
+            .dependency.resource {
+              color: #b08ec8;
+            }
+            
             div.disasmline.selected div.depptr, div.disasmline.selected div.depptr::before {
               --lineheight: 14.4pt;
               position: absolute;
@@ -412,6 +416,10 @@ int main(int argc, char **pArgv)
             
             div.disasmline.selected div.depptr.memory, div.disasmline.selected div.depptr.memory::before, div.disasmline.selected div.depptr.memory::after {
               border-color: #0bffe8;
+            }
+            
+            div.disasmline.selected div.depptr.resource, div.disasmline.selected div.depptr.resource::before, div.disasmline.selected div.depptr.resource::after {
+              border-color: #b060ff;
             }
         </style>
         <div class="main">
@@ -468,6 +476,12 @@ int main(int argc, char **pArgv)
 
             if (memP.selfPressureCycles > 0 && memP.origin.has_value() && memP.origin.value().iterationIndex != (size_t)-1)
               fprintf(pOutFile, "<div class=\"depptr memory\" style=\"--e: %" PRIi64 "\"></div>", (int64_t)instructionInfo.instructionIndex - memP.origin.value().instructionIndex);
+
+            const auto &rsrcP = instructionInfo.perIteration[iteration].resourcePressure;
+
+            for (const auto &_port : rsrcP.associatedResources)
+              if (_port.pressureCycles > 0 && _port.origin.has_value())
+                fprintf(pOutFile, "<div class=\"depptr resource\" style=\"--e: %" PRIi64 "\"></div>", (int64_t)instructionInfo.instructionIndex - _port.origin.value().instructionIndex);
           }
         }
 
@@ -518,6 +532,12 @@ int main(int argc, char **pArgv)
 
             if (memP.selfPressureCycles > 0 && memP.origin.has_value() && memP.origin.value().iterationIndex != (size_t)-1)
               fprintf(pOutFile, "<div class=\"dependency memory\">%" PRIu64 " cycles memory pressure (Loop %" PRIu64 ")</div>", memP.selfPressureCycles, iteration);
+
+            const auto &rsrcP = instructionInfo.perIteration[iteration].resourcePressure;
+
+            for (const auto &_port : rsrcP.associatedResources)
+              if (_port.pressureCycles > 0 && _port.origin.has_value())
+                fprintf(pOutFile, "<div class=\"dependency resource\">%" PRIu64 " cycles resource pressure on '%s' (Loop %" PRIu64 ")</div>", _port.pressureCycles, _port.resourceName, iteration);
           }
         }
 
