@@ -274,6 +274,8 @@ int main(int argc, char **pArgv)
               position: fixed;
               max-height: 100%;
               overflow-y: scroll;
+              font-size: 12pt;
+              line-height: 120%;
             }
             
             span.linenum {
@@ -287,7 +289,7 @@ int main(int argc, char **pArgv)
             }
 
             span.linenum.highlighted {
-              color: #996b66;
+              color: #998c66;
             }
 
             span.asm.null {
@@ -303,7 +305,7 @@ int main(int argc, char **pArgv)
             }
 
             div.disasmline.selected span.linenum.highlighted {
-              color: #d96054;
+              color: #c6b584;
             }
 
             div.disasmline.selected span.asm.highlighted {
@@ -324,7 +326,7 @@ int main(int argc, char **pArgv)
               opacity: 80%;
             }
 
-            .bottleneck {
+            .stall {
               color: #ff7171;
               font-size: 82%;
               display: block;
@@ -355,6 +357,110 @@ int main(int argc, char **pArgv)
               width: 1pt;
               height: 1pt;
               margin-bottom: 500pt;
+            }
+
+            .dependency {
+              font-size: 85%;
+            }
+            
+            .dependency.register {
+              color: #b18597;
+            }
+            
+            .dependency.memory {
+              color: #85b1a7;
+            }
+            
+            .dependency.resource {
+              color: #aa9fdf;
+            }
+
+            span.press_obj {
+              display: inline-block;
+              background: #1c1c1c;
+              padding: 0 3.5pt;
+              border-radius: 5pt;
+              color: #ececec;
+            }
+
+            span.loop, span.loop_origin {
+              display: inline-block;
+              color: #fff;
+              background: #4924ff;
+              border-radius: 5pt;
+              padding: 0 3pt;
+              box-shadow: 1pt 1pt #000;
+            }
+
+            span.loop_origin {
+              background: #6c629b;
+            }
+
+            span.loop::before {
+              content: 'Loop ';
+              font-size: 70%;
+            }
+
+            span.loop_origin::before {
+              content: '◀ Loop ';
+              font-size: 70%;
+            }
+            
+            div.disasmline.selected div.depptr, div.disasmline.selected div.depptr::before {
+              --lineheight: 14.4pt;
+              position: absolute;
+              width: 10pt;
+              height: calc(var(--e) * var(--lineheight));
+              background: transparent;
+              border: 2pt solid #ff0b7d;
+              border-right: none;
+              margin-top: calc(-7.5pt - var(--lineheight) * var(--e));
+              margin-left: 60pt;
+              border-radius: 5pt 0 0 5pt;
+            }
+
+            div.disasmline.selected div.depptr::before {
+              content: ' ';
+              margin: -1.5pt;
+              margin-top: calc(-1.6pt + var(--lineheight) * var(--e));
+              height: calc((0 - var(--e)) * var(--lineheight) - 1.5pt);
+              opacity: calc(var(--e) > 0 ? 1: 0);
+            }
+            
+            div.disasmline.selected div.depptr::after {
+              content: ' ';
+              margin: -3.5pt 0 0 3.5pt;
+              width: 5pt;
+              height: 5pt;
+              border-radius: 0;
+              border: 1pt solid #ff0b7d;
+              border-bottom: none;
+              border-left: none;
+              transform: rotate(45deg);
+              position: absolute;
+              background: transparent;
+            }
+            
+            div.disasmline.selected div.depptr.register, div.disasmline.selected div.depptr.register::before, div.disasmline.selected div.depptr.register::after {
+              border-color: #ff0b7d;
+            }
+            
+            div.disasmline.selected div.depptr.memory, div.disasmline.selected div.depptr.memory::before, div.disasmline.selected div.depptr.memory::after {
+              border-color: #0bffe8;
+            }
+            
+            div.disasmline.selected div.depptr.resource, div.disasmline.selected div.depptr.resource::before, div.disasmline.selected div.depptr.resource::after {
+              border-color: #8372f9;
+            }
+
+            .disasmline.selected.static {
+              background: #aaa;
+              cursor: pointer;
+              user-select: none;
+            }
+
+            .disasmline.selected.static span.linenum, .disasmline.selected.static span.asm {
+              filter: invert();
             }
         </style>
         <div class="main">
@@ -396,7 +502,31 @@ int main(int argc, char **pArgv)
 
         const char *subVariant = instructionInfo.stallInfo.size() > 0 ? " highlighted" : (instructionInfo.usage.size() == 0 && instructionInfo.clockExecuted - instructionInfo.clockIssued == 0 ? " null" : "");
 
-        fprintf(pOutFile, "<div class=\"disasmline\" idx=\"%" PRIu64 "\"><span class=\"linenum%s\">0x%08" PRIX64 "&emsp;</span><span class=\"asm%s\" style=\"--exec: %" PRIu64 ";\">%s</span><div class=\"extra_info\">", instructionIndex, subVariant, virtualAddress + addressDisplayOffset, subVariant, instructionInfo.clockExecuted - instructionInfo.clockIssued, disasmBuffer);
+        fprintf(pOutFile, "<div class=\"disasmline\" idx=\"%" PRIu64 "\"><span class=\"linenum%s\">0x%08" PRIX64 "&emsp;</span><span class=\"asm%s\" style=\"--exec: %" PRIu64 ";\">%s</span>", instructionIndex, subVariant, virtualAddress + addressDisplayOffset, subVariant, instructionInfo.clockExecuted - instructionInfo.clockIssued, disasmBuffer);
+
+        // Add Dependency Arrows.
+        {
+          for (size_t iteration = 0; iteration < instructionInfo.perIteration.size(); iteration++)
+          {
+            const auto &regP = instructionInfo.perIteration[iteration].registerPressure;
+
+            if (regP.selfPressureCycles > 0 && regP.origin.has_value() && regP.origin.value().iterationIndex != (size_t)-1)
+              fprintf(pOutFile, "<div class=\"depptr register\" style=\"--e: %" PRIi64 "\"></div>", (int64_t)instructionInfo.instructionIndex - regP.origin.value().instructionIndex);
+
+            const auto &memP = instructionInfo.perIteration[iteration].memoryPressure;
+
+            if (memP.selfPressureCycles > 0 && memP.origin.has_value() && memP.origin.value().iterationIndex != (size_t)-1)
+              fprintf(pOutFile, "<div class=\"depptr memory\" style=\"--e: %" PRIi64 "\"></div>", (int64_t)instructionInfo.instructionIndex - memP.origin.value().instructionIndex);
+
+            const auto &rsrcP = instructionInfo.perIteration[iteration].resourcePressure;
+
+            for (const auto &_port : rsrcP.associatedResources)
+              if (_port.pressureCycles > 0 && _port.origin.has_value())
+                fprintf(pOutFile, "<div class=\"depptr resource\" style=\"--e: %" PRIi64 "\"></div>", (int64_t)instructionInfo.instructionIndex - _port.origin.value().instructionIndex);
+          }
+        }
+
+        fputs("<div class=\"extra_info\">", pOutFile);
 
         fprintf(pOutFile, "<div class=\"uops\">%" PRIu64 " uOps</div>", instructionInfo.uOpCount);
         fprintf(pOutFile, "<div class=\"cycleInfo\">dispatched: %" PRIu64 " cycles</div>", instructionInfo.clockPending - instructionInfo.clockDispatched);
@@ -426,8 +556,38 @@ int main(int argc, char **pArgv)
           fputs("</div>\n", pOutFile);
         }
 
+        // Add Stall Info.
         for (const auto &_b : instructionInfo.stallInfo)
-          fprintf(pOutFile, "<div class=\"bottleneck\">%s</div>", _b.c_str());
+          fprintf(pOutFile, "<div class=\"stall\">%s</div>", _b.c_str());
+
+        // Add Dependency Info.
+        {
+          for (size_t iteration = 0; iteration < instructionInfo.perIteration.size(); iteration++)
+          {
+            const auto &regP = instructionInfo.perIteration[iteration].registerPressure;
+
+            if (regP.selfPressureCycles > 0 && regP.origin.has_value() && regP.origin.value().iterationIndex != (size_t)-1)
+              fprintf(pOutFile, "<div class=\"dependency register\">%" PRIu64 " cycle(s) on <span class=\"press_obj\">%s</span> <span class=\"loop\">%" PRIu64 "</span></div>", regP.selfPressureCycles, regP.registerName.c_str(), iteration);
+
+            const auto &memP = instructionInfo.perIteration[iteration].memoryPressure;
+
+            if (memP.selfPressureCycles > 0 && memP.origin.has_value() && memP.origin.value().iterationIndex != (size_t)-1)
+              fprintf(pOutFile, "<div class=\"dependency memory\">%" PRIu64 " cycle(s) on memory <span class=\"loop\">%" PRIu64 "</span></div>", memP.selfPressureCycles, iteration);
+
+            const auto &rsrcP = instructionInfo.perIteration[iteration].resourcePressure;
+
+            for (const auto &_port : rsrcP.associatedResources)
+            {
+              if (_port.pressureCycles > 0 && _port.origin.has_value())
+              {
+                if (_port.origin.value().iterationIndex == iteration)
+                  fprintf(pOutFile, "<div class=\"dependency resource\">%" PRIu64 " cycle(s) on <span class=\"press_obj\">%s</span> <span class=\"loop\" title=\"Loop Index\">%" PRIu64 "</span></div>", _port.pressureCycles, _port.resourceName.c_str(), iteration);
+                else
+                  fprintf(pOutFile, "<div class=\"dependency resource\">%" PRIu64 " cycle(s) on <span class=\"press_obj\">%s</span> <span class=\"loop\" title=\"Loop Index\">%" PRIu64 "</span> <span class=\"loop_origin\" title=\"Dependency Origin Loop Index\">%" PRIu64 "</span></div>", _port.pressureCycles, _port.resourceName.c_str(), iteration, _port.origin.value().iterationIndex);
+              }
+            }
+          }
+        }
 
         fputs("</div></div>\n", pOutFile);
 
@@ -469,7 +629,6 @@ int main(int argc, char **pArgv)
               fprintf(pOutFile, "\t<div class=\"inst ready\" style=\"--s: %" PRIu64 "; --l: %" PRIu64 ";\"></div>\n", _iter.clockReady, _iter.clockIssued - _iter.clockReady);
               fprintf(pOutFile, "\t<div class=\"inst executing\" style=\"--s: %" PRIu64 "; --l: %" PRIu64 ";\"></div>\n", _iter.clockIssued, _iter.clockExecuted - _iter.clockIssued);
               fprintf(pOutFile, "\t<div class=\"inst retiring\" style=\"--s: %" PRIu64 "; --l: %" PRIu64 ";\"></div>\n", _iter.clockExecuted, _iter.clockRetired - _iter.clockExecuted);
-
               fputs("</div>\n", pOutFile);
             }
           }
@@ -488,8 +647,13 @@ var lines = document.getElementsByClassName("disasmline");
 var inst0 = document.getElementsByClassName("laneinst");
 var inst1 = document.getElementsByClassName("instex");
 
+var clicked = null;
+
 for (var i = 0; i < lines.length; i++) {
   lines[i].onmouseenter = (e) => {
+    if (clicked != null)
+      return;
+    
     var line = e.target;
 
     if (line.parentElement.className.startsWith('disasmline'))
@@ -514,7 +678,32 @@ for (var i = 0; i < lines.length; i++) {
     }
   };
 
+    lines[i].onclick = (e) => {
+      var line = e.target;
+
+      if (line.parentElement.className.startsWith('disasmline'))
+        line = line.parentElement;
+      
+      if (clicked != line) {
+        if (clicked != null) {
+          var old = clicked;
+          clicked = null;
+          old.onmouseleave({ target: old });
+          line.onmouseenter({ target: line });
+        } else {
+          clicked = line;
+          clicked.className = "disasmline selected static";
+        }
+      } else {
+        clicked.className = "disasmline selected";
+        clicked = null;
+      }
+    }
+
   lines[i].onmouseleave = (e) => {
+    if (clicked != null)
+      return;
+    
     var line = e.target;
 
     if (line.parentElement.className.startsWith('disasmline'))

@@ -126,12 +126,81 @@ struct BasicInstructionInfo
   { }
 };
 
+struct DependencyOrigin
+{
+  size_t iterationIndex, instructionIndex;
+
+  inline DependencyOrigin(const size_t iteration, const size_t instruction) :
+    iterationIndex(iteration),
+    instructionIndex(instruction)
+  { }
+};
+
+struct ResourceTypeDependencyInfo
+{
+  size_t resourceTypeIndex; // if this is -1 we don't have the resource / resource type in ports.
+  size_t firstMatchingPortIndex; // the first port with the given resource type. (there may be multiple ports with this resource type)
+  std::string resourceName;
+  size_t pressureCycles;
+  std::optional<DependencyOrigin> origin;
+
+  inline ResourceTypeDependencyInfo(const size_t resourceType, const size_t matchingPort, const std::string &name) :
+    resourceTypeIndex(resourceType),
+    firstMatchingPortIndex(matchingPort),
+    resourceName(name),
+    pressureCycles(0)
+  { }
+};
+
+struct DependencyInfo
+{
+  size_t totalPressureCycles; // may have accumulated over multiple dependencies.
+  size_t selfPressureCycles; // just the ones for this dependency.
+  std::optional<DependencyOrigin> origin;
+  
+  inline DependencyInfo() :
+    totalPressureCycles(0),
+    selfPressureCycles(0)
+  { }
+};
+
+struct RegisterDependencyInfo : DependencyInfo
+{
+  std::string registerName;
+
+  inline RegisterDependencyInfo() :
+    DependencyInfo()
+  { }
+};
+
+struct ResourceDependencyInfo
+{
+  size_t totalPressureCycles; // may have accumulated over multiple dependencies.
+  std::vector<ResourceTypeDependencyInfo> associatedResources;
+
+  inline ResourceDependencyInfo() :
+    totalPressureCycles(0)
+  { }
+};
+
+struct LoopInstructionInfo : BasicInstructionInfo
+{
+  size_t totalPressureCycles;
+  RegisterDependencyInfo registerPressure;
+  ResourceDependencyInfo resourcePressure;
+  DependencyInfo memoryPressure;
+
+  inline LoopInstructionInfo() :
+    totalPressureCycles(0)
+  { }
+};
+
 struct InstructionInfo : BasicInstructionInfo
 {
   size_t instructionIndex, instructionByteOffset, uOpCount;
   std::vector<std::string> stallInfo;
   std::vector<size_t> physicalRegistersObstructedPerRegisterType;
-  std::vector<BasicInstructionInfo> perIteration;
+  std::vector<LoopInstructionInfo> perIteration;
 
   inline InstructionInfo(const size_t instructionIndex, const size_t instructionByteOffset) :
     BasicInstructionInfo(),

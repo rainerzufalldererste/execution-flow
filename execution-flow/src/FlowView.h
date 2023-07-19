@@ -33,6 +33,7 @@
 
 #pragma warning (push, 0)
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/MC/MCInstPrinter.h"
 #include "llvm/MCA/HWEventListener.h"
 #pragma warning (pop)
 
@@ -48,10 +49,23 @@ private:
   bool hasFirstObservedInstructionClock = false;
   size_t firstObservedInstructionClock = 0;
   llvm::SmallVector<bool> isRegisterFileRelevant;
+  const llvm::MCSchedModel &schedulerModel; // initialized in the constructor.
+  const llvm::MCInstPrinter &instructionPrinter; // initialized in the constructor.
+
+  llvm::SmallVector<std::pair<size_t, size_t>> lastResourceUser; // internalResourceType => (runIndex, instructionIndex).
+
+  // TODO: this should be a pool, not a map.
+  llvm::DenseMap<std::pair<size_t, size_t>, bool> inFlightInstructions; // (runIndex, instruction index), bool is meaningless.
+
+  void FlowView::addResourcePressure(InstructionInfo &info, const size_t iterationIndex, const size_t llvmResourceMask, const llvm::mca::Instruction &instruction, const bool fromPressureEvent);
+  void FlowView::addRegisterPressure(InstructionInfo &info, const size_t selfIterationIndex, const size_t dependencyIterationIndex, const size_t dependencyInstructionIndex, const llvm::MCPhysReg &physicalRegister, const size_t dependencyCycles);
+  void FlowView::addMemoryPressure(InstructionInfo &info, const size_t selfIterationIndex, const size_t dependencyIterationIndex, const size_t dependencyInstructionIndex, const size_t dependencyCycles);
 
 public:
-  inline FlowView(PortUsageFlow *pFlow, const size_t relevantIteration) :
+  inline FlowView(PortUsageFlow *pFlow, const llvm::MCSchedModel &schedulerModel, const llvm::MCInstPrinter &instructionPrinter, const size_t relevantIteration) :
     pFlow(pFlow),
+    schedulerModel(schedulerModel),
+    instructionPrinter(instructionPrinter),
     relevantIteration(relevantIteration)
   { }
 
