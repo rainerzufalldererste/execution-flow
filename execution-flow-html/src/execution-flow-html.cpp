@@ -360,7 +360,7 @@ int main(int argc, char **pArgv)
             }
 
             .dependency {
-              font-size: 80%;
+              font-size: 85%;
             }
             
             .dependency.register {
@@ -373,6 +373,35 @@ int main(int argc, char **pArgv)
             
             .dependency.resource {
               color: #aa9fdf;
+            }
+
+            span.press_obj {
+              display: inline-block;
+              background: #1c1c1c;
+              padding: 0 3.5pt;
+              border-radius: 5pt;
+              color: #ececec;
+            }
+
+            span.loop, span.loop_origin {
+              display: inline-block;
+              color: #fff;
+              background: #4924ff;
+              border-radius: 5pt;
+              padding: 0 3pt;
+              box-shadow: 1pt 1pt #000;
+            }
+
+            span.loop_origin {
+              background: #6c629b;
+            }
+
+            span.loop::before {
+              content: 'L';
+            }
+
+            span.loop_origin::before {
+              content: '◀ L';
             }
             
             div.disasmline.selected div.depptr, div.disasmline.selected div.depptr::before {
@@ -536,12 +565,12 @@ int main(int argc, char **pArgv)
             const auto &regP = instructionInfo.perIteration[iteration].registerPressure;
 
             if (regP.selfPressureCycles > 0 && regP.origin.has_value() && regP.origin.value().iterationIndex != (size_t)-1)
-              fprintf(pOutFile, "<div class=\"dependency register\">%" PRIu64 " cycles register pressure on '%s' (Loop %" PRIu64 ")</div>", regP.selfPressureCycles, regP.registerName.c_str(), iteration);
+              fprintf(pOutFile, "<div class=\"dependency register\">%" PRIu64 " cycle(s) on <span class=\"press_obj\">%s</span> <span class=\"loop\">%" PRIu64 "</span></div>", regP.selfPressureCycles, regP.registerName.c_str(), iteration);
 
             const auto &memP = instructionInfo.perIteration[iteration].memoryPressure;
 
             if (memP.selfPressureCycles > 0 && memP.origin.has_value() && memP.origin.value().iterationIndex != (size_t)-1)
-              fprintf(pOutFile, "<div class=\"dependency memory\">%" PRIu64 " cycles memory pressure (Loop %" PRIu64 ")</div>", memP.selfPressureCycles, iteration);
+              fprintf(pOutFile, "<div class=\"dependency memory\">%" PRIu64 " cycle(s) on memory <span class=\"loop\">%" PRIu64 "</span></div>", memP.selfPressureCycles, iteration);
 
             const auto &rsrcP = instructionInfo.perIteration[iteration].resourcePressure;
 
@@ -550,9 +579,9 @@ int main(int argc, char **pArgv)
               if (_port.pressureCycles > 0 && _port.origin.has_value())
               {
                 if (_port.origin.value().iterationIndex == iteration)
-                  fprintf(pOutFile, "<div class=\"dependency resource\">%" PRIu64 " cycles resource pressure on '%s' (in Loop %" PRIu64 ")</div>", _port.pressureCycles, _port.resourceName.c_str(), iteration);
+                  fprintf(pOutFile, "<div class=\"dependency resource\">%" PRIu64 " cycle(s) on <span class=\"press_obj\">%s</span> <span class=\"loop\" title=\"Loop Index\">%" PRIu64 "</span></div>", _port.pressureCycles, _port.resourceName.c_str(), iteration);
                 else
-                  fprintf(pOutFile, "<div class=\"dependency resource\">%" PRIu64 " cycles resource pressure on '%s' (in Loop %" PRIu64 " from Loop %" PRIu64 ")</div>", _port.pressureCycles, _port.resourceName.c_str(), iteration, _port.origin.value().iterationIndex);
+                  fprintf(pOutFile, "<div class=\"dependency resource\">%" PRIu64 " cycle(s) on <span class=\"press_obj\">%s</span> <span class=\"loop\" title=\"Loop Index\">%" PRIu64 "</span> <span class=\"loop_origin\" title=\"Dependency Origin Loop Index\">%" PRIu64 "</span></div>", _port.pressureCycles, _port.resourceName.c_str(), iteration, _port.origin.value().iterationIndex);
               }
             }
           }
