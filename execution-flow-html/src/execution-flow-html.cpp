@@ -397,11 +397,13 @@ int main(int argc, char **pArgv)
             }
 
             span.loop::before {
-              content: 'L';
+              content: 'Loop ';
+              font-size: 70%;
             }
 
             span.loop_origin::before {
-              content: '◀ L';
+              content: '◀ Loop ';
+              font-size: 70%;
             }
             
             div.disasmline.selected div.depptr, div.disasmline.selected div.depptr::before {
