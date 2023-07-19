@@ -372,7 +372,7 @@ int main(int argc, char **pArgv)
             }
             
             .dependency.resource {
-              color: #b08ec8;
+              color: #aa9fdf;
             }
             
             div.disasmline.selected div.depptr, div.disasmline.selected div.depptr::before {
@@ -419,7 +419,17 @@ int main(int argc, char **pArgv)
             }
             
             div.disasmline.selected div.depptr.resource, div.disasmline.selected div.depptr.resource::before, div.disasmline.selected div.depptr.resource::after {
-              border-color: #b060ff;
+              border-color: #8372f9;
+            }
+
+            .disasmline.selected.static {
+              background: #aaa;
+              cursor: pointer;
+              user-select: none;
+            }
+
+            .disasmline.selected.static span.linenum, .disasmline.selected.static span.asm {
+              filter: invert();
             }
         </style>
         <div class="main">
@@ -536,8 +546,15 @@ int main(int argc, char **pArgv)
             const auto &rsrcP = instructionInfo.perIteration[iteration].resourcePressure;
 
             for (const auto &_port : rsrcP.associatedResources)
+            {
               if (_port.pressureCycles > 0 && _port.origin.has_value())
-                fprintf(pOutFile, "<div class=\"dependency resource\">%" PRIu64 " cycles resource pressure on '%s' (Loop %" PRIu64 ")</div>", _port.pressureCycles, _port.resourceName, iteration);
+              {
+                if (_port.origin.value().iterationIndex == iteration)
+                  fprintf(pOutFile, "<div class=\"dependency resource\">%" PRIu64 " cycles resource pressure on '%s' (in Loop %" PRIu64 ")</div>", _port.pressureCycles, _port.resourceName.c_str(), iteration);
+                else
+                  fprintf(pOutFile, "<div class=\"dependency resource\">%" PRIu64 " cycles resource pressure on '%s' (in Loop %" PRIu64 " from Loop %" PRIu64 ")</div>", _port.pressureCycles, _port.resourceName.c_str(), iteration, _port.origin.value().iterationIndex);
+              }
+            }
           }
         }
 
@@ -599,8 +616,13 @@ var lines = document.getElementsByClassName("disasmline");
 var inst0 = document.getElementsByClassName("laneinst");
 var inst1 = document.getElementsByClassName("instex");
 
+var clicked = null;
+
 for (var i = 0; i < lines.length; i++) {
   lines[i].onmouseenter = (e) => {
+    if (clicked != null)
+      return;
+    
     var line = e.target;
 
     if (line.parentElement.className.startsWith('disasmline'))
@@ -625,7 +647,32 @@ for (var i = 0; i < lines.length; i++) {
     }
   };
 
+    lines[i].onclick = (e) => {
+      var line = e.target;
+
+      if (line.parentElement.className.startsWith('disasmline'))
+        line = line.parentElement;
+      
+      if (clicked != line) {
+        if (clicked != null) {
+          var old = clicked;
+          clicked = null;
+          old.onmouseleave({ target: old });
+          line.onmouseenter({ target: line });
+        } else {
+          clicked = line;
+          clicked.className = "disasmline selected static";
+        }
+      } else {
+        clicked.className = "disasmline selected";
+        clicked = null;
+      }
+    }
+
   lines[i].onmouseleave = (e) => {
+    if (clicked != null)
+      return;
+    
     var line = e.target;
 
     if (line.parentElement.className.startsWith('disasmline'))
