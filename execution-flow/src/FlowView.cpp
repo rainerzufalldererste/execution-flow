@@ -169,16 +169,15 @@ void FlowView::onEvent(const llvm::mca::HWInstructionEvent &evnt)
     
     // Handle Resource Dependency.
     {
-      const uint64_t criticalResources = pInstruction->getCriticalResourceMask();
+      uint64_t criticalResources = pInstruction->getCriticalResourceMask();
     
-      for (size_t bit = 0; bit < 64; bit++)
+      while (criticalResources)
       {
-        const uint64_t mask = (uint64_t)1 << bit;
-    
-        if (!(criticalResources & mask))
-          continue;
+        const uint64_t mask = criticalResources & (uint64_t)-criticalResources;
     
         addResourcePressure(instructionInfo, runIndex, llvm::mca::getResourceStateIndex(mask), *pInstruction, false);
+
+        criticalResources ^= mask;
       }
     }
     
@@ -269,16 +268,15 @@ void FlowView::onEvent(const llvm::mca::HWPressureEvent &evnt)
       occurence.resourcePressure.totalPressureCycles++;
   
       const llvm::mca::Instruction *pMcaInstruction = _inst.getInstruction();
-      const size_t criticalResources = pMcaInstruction->getCriticalResourceMask() & evnt.ResourceMask;
+      uint64_t criticalResources = pMcaInstruction->getCriticalResourceMask() & evnt.ResourceMask;
   
-      for (size_t bit = 0; bit < 64; bit++)
+      while (criticalResources)
       {
-        const uint64_t mask = (uint64_t)1 << bit;
-  
-        if (!(criticalResources & mask))
-          continue;
+        const uint64_t mask = criticalResources & (uint64_t)-criticalResources;
   
         addResourcePressure(instructionInfo, runIndex, llvm::mca::getResourceStateIndex(mask), *pMcaInstruction, true);
+  
+        criticalResources ^= mask;
       }
   
       break;
