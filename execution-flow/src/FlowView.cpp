@@ -351,12 +351,25 @@ void FlowView::addResourcePressure(InstructionInfo &info, const size_t iteration
   else
   {
     if (lastResourceUser.size() <= llvmResourceIndex)
+    {
       lastResourceUser.resize(llvmResourceIndex + 1, std::make_pair((size_t)-1, (size_t)-1));
-  
+      preLastResourceUser.resize(llvmResourceIndex + 1, std::make_pair((size_t)-1, (size_t)-1));
+    }
+
     if (lastResourceUser[llvmResourceIndex].first != (size_t)-1)
-      pDependency->origin = DependencyOrigin(lastResourceUser[llvmResourceIndex].first, lastResourceUser[llvmResourceIndex].second);
-  
-    lastResourceUser[llvmResourceIndex] = std::make_pair(iterationIndex, info.instructionIndex);
+    {
+      if (lastResourceUser[llvmResourceIndex].second != info.instructionIndex || lastResourceUser[llvmResourceIndex].first != iterationIndex)
+        pDependency->origin = DependencyOrigin(lastResourceUser[llvmResourceIndex].first, lastResourceUser[llvmResourceIndex].second);
+      else if (preLastResourceUser[llvmResourceIndex].first != (size_t)-1)
+        pDependency->origin = DependencyOrigin(preLastResourceUser[llvmResourceIndex].first, preLastResourceUser[llvmResourceIndex].second);
+    }
+
+    // If this is called multiple times for the same function, don't set this again.
+    if (lastResourceUser[llvmResourceIndex].second != info.instructionIndex || lastResourceUser[llvmResourceIndex].first != iterationIndex)
+    {
+      preLastResourceUser[llvmResourceIndex] = lastResourceUser[llvmResourceIndex];
+      lastResourceUser[llvmResourceIndex] = std::make_pair(iterationIndex, info.instructionIndex);
+    }
   }
 }
 

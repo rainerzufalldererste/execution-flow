@@ -429,16 +429,29 @@ int main(int argc, char **pArgv)
             
             div.disasmline.selected div.depptr::after {
               content: ' ';
-              margin: -3.5pt 0 0 3.5pt;
+              margin: -4pt 0 0 3.5pt;
               width: 5pt;
               height: 5pt;
               border-radius: 0;
-              border: 1pt solid #ff0b7d;
+              border: 1.5pt solid #ff0b7d;
               border-bottom: none;
               border-left: none;
               transform: rotate(45deg);
               position: absolute;
               background: transparent;
+            }
+
+            div.disasmline.selected div.depptr.resource {
+              width: 20pt;
+              left: -10pt;
+            }
+
+            div.disasmline.selected div.depptr.resource::before {
+              width: 20pt;
+            }
+            
+            div.disasmline.selected div.depptr.resource::after {
+              margin-left: 14pt;
             }
             
             div.disasmline.selected div.depptr.register, div.disasmline.selected div.depptr.register::before, div.disasmline.selected div.depptr.register::after {

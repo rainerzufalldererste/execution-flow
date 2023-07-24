@@ -52,7 +52,9 @@ private:
   const llvm::MCSchedModel &schedulerModel; // initialized in the constructor.
   const llvm::MCInstPrinter &instructionPrinter; // initialized in the constructor.
 
-  llvm::SmallVector<std::pair<size_t, size_t>> lastResourceUser; // internalResourceType => (runIndex, instructionIndex).
+  // llvmResourceIndex => (runIndex, instructionIndex).
+  llvm::SmallVector<std::pair<size_t, size_t>> lastResourceUser;
+  llvm::SmallVector<std::pair<size_t, size_t>> preLastResourceUser; // sometimes the resource has already been made the current resource, so we'll also have the one before that as a backup.
 
   // TODO: this should be a pool, not a map.
   llvm::DenseMap<std::pair<size_t, size_t>, bool> inFlightInstructions; // (runIndex, instruction index), bool is meaningless.
