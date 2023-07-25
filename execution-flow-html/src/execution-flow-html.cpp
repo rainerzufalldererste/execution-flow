@@ -137,6 +137,23 @@ int main(int argc, char **pArgv)
               line-break: anywhere;
               text-align: justify;
             }
+
+            th {
+              color: #fff0;
+            }
+
+            .th_float {
+              position: fixed;
+              top: 8pt;
+              padding: 2pt 5pt;
+              border-radius: 2pt;
+              margin-left: -5pt;
+              color: #fff;
+            }
+
+            th, .th_float {
+              width: calc((100% - 480pt) / var(--lane-count) - 5pt);
+            }
             
             .laneinst {
                 --colorA: hsl(calc(var(--lane) * 0.41 * 360deg - var(--iter) * 0.2 * 360deg) 50% 50%);
@@ -497,6 +514,7 @@ int main(int argc, char **pArgv)
 )TEXT";
 
     fputs(documentSetupHtml, pOutFile);
+    fprintf(pOutFile, "<style>\n:root {--lane-count: %" PRIu64 ";\n}\n</style>", flow.ports.size());
 
     std::vector<std::string> disassemblyLines;
 
@@ -666,7 +684,7 @@ int main(int argc, char **pArgv)
       fputs("<div class=\"flowgraph\"><table class=\"flow\"><tr>\n", pOutFile);
 
       for (const auto &_port : flow.ports)
-        fprintf(pOutFile, "<th>%s</th>\n", _port.name.c_str());
+        fprintf(pOutFile, "<th>%s<div class=\"th_float\">%s</div></th>\n", _port.name.c_str(), _port.name.c_str());
 
       fputs("</tr>\n<tr>", pOutFile);
 
