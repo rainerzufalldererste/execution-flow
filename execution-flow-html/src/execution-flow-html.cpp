@@ -137,6 +137,23 @@ int main(int argc, char **pArgv)
               line-break: anywhere;
               text-align: justify;
             }
+
+            th {
+              color: #fff0;
+            }
+
+            .th_float {
+              position: fixed;
+              top: 8pt;
+              padding: 2pt 5pt;
+              border-radius: 2pt;
+              margin-left: -5pt;
+              color: #fff;
+            }
+
+            th, .th_float {
+              width: calc((100% - 480pt) / var(--lane-count) - 5pt);
+            }
             
             .laneinst {
                 --colorA: hsl(calc(var(--lane) * 0.41 * 360deg - var(--iter) * 0.2 * 360deg) 50% 50%);
@@ -160,6 +177,23 @@ int main(int argc, char **pArgv)
                 border: 1pt solid var(--colorA);
                 opacity: 100%;
                 z-index: 10;
+            }
+
+            .laneinst.dependent {
+              opacity: 100;
+              --colorA: hsl(calc(var(--lane) * 0.41 * 360deg - var(--iter) * 0.2 * 360deg) 70% 60% / 0.3);
+              --colorB: hsl(calc(var(--lane) * 0.41 * 360deg + 50deg - var(--iter) * 0.2 * 360deg) 40% 50% / 0.1);
+              --colorC: hsl(calc(var(--lane) * 0.41 * 360deg - var(--iter) * 0.2 * 360deg) 70% 50%);
+              border: 2pt dotted var(--colorC);
+            }
+            
+            .laneinst.dependent::after {
+              content: var(--type);
+              font-size: 80%;
+              text-transform: uppercase;
+              padding: 0pt 2pt;
+              text-shadow: 0 0 var(--colorC);
+              color: #fff7;
             }
 
             .inst_base {
@@ -429,16 +463,29 @@ int main(int argc, char **pArgv)
             
             div.disasmline.selected div.depptr::after {
               content: ' ';
-              margin: -3.5pt 0 0 3.5pt;
+              margin: -4pt 0 0 3.5pt;
               width: 5pt;
               height: 5pt;
               border-radius: 0;
-              border: 1pt solid #ff0b7d;
+              border: 1.5pt solid #ff0b7d;
               border-bottom: none;
               border-left: none;
               transform: rotate(45deg);
               position: absolute;
               background: transparent;
+            }
+
+            div.disasmline.selected div.depptr.resource {
+              width: 20pt;
+              left: -10pt;
+            }
+
+            div.disasmline.selected div.depptr.resource::before {
+              width: 20pt;
+            }
+            
+            div.disasmline.selected div.depptr.resource::after {
+              margin-left: 14pt;
             }
             
             div.disasmline.selected div.depptr.register, div.disasmline.selected div.depptr.register::before, div.disasmline.selected div.depptr.register::after {
@@ -467,6 +514,7 @@ int main(int argc, char **pArgv)
 )TEXT";
 
     fputs(documentSetupHtml, pOutFile);
+    fprintf(pOutFile, "<style>\n:root {--lane-count: %" PRIu64 ";\n}\n</style>", flow.ports.size());
 
     std::vector<std::string> disassemblyLines;
 
@@ -589,7 +637,41 @@ int main(int argc, char **pArgv)
           }
         }
 
-        fputs("</div></div>\n", pOutFile);
+        fputs("</div>\n<div class=\"dependency_data\">\n", pOutFile);
+
+        // Add Dependency Info.
+        {
+          for (size_t iteration = 0; iteration < instructionInfo.perIteration.size(); iteration++)
+          {
+            const auto &regP = instructionInfo.perIteration[iteration].registerPressure;
+
+            if (regP.selfPressureCycles > 0 && regP.origin.has_value() && regP.origin.value().iterationIndex != (size_t)-1)
+              fprintf(pOutFile, "<div class=\"__reg\" cycles=\"%" PRIu64 "\" desc=\"%s\" iteration=\"%" PRIu64 "\" index=\"%" PRIu64 "\"></div>", regP.selfPressureCycles, regP.registerName.c_str(), regP.origin.value().iterationIndex, regP.origin.value().instructionIndex);
+
+            const auto &memP = instructionInfo.perIteration[iteration].memoryPressure;
+
+            if (memP.selfPressureCycles > 0 && memP.origin.has_value() && memP.origin.value().iterationIndex != (size_t)-1)
+              fprintf(pOutFile, "<div class=\"__mem\" cycles=\"%" PRIu64 "\" iteration=\"%" PRIu64 "\" index=\"%" PRIu64 "\"></div>", memP.selfPressureCycles, memP.origin.value().iterationIndex, memP.origin.value().instructionIndex);
+
+            const auto &rsrcP = instructionInfo.perIteration[iteration].resourcePressure;
+
+            for (const auto &_port : rsrcP.associatedResources)
+            {
+              if (_port.pressureCycles > 0 && _port.origin.has_value())
+              {
+                const auto other = flow.instructionExecutionInfo[_port.origin.value().instructionIndex].perIteration[_port.origin.value().iterationIndex];
+
+                for (const auto &_otherPort : other.usage)
+                {
+                  // if (flow.ports[_otherPort.resourceIndex].resourceTypeIndex == flow.ports[_port.firstMatchingPortIndex].resourceTypeIndex) // <- this doesn't match anything quite often, as apparently instructions have dependencies on resources they don't use and depend on instructions on that port, that also didn't use this resource.
+                    fprintf(pOutFile, "<div class=\"__rsc\" cycles=\"%" PRIu64 "\" desc=\"%s\" iteration=\"%" PRIu64 "\" index=\"%" PRIu64 "\" lane=\"%" PRIu64 "\"></div>", _port.pressureCycles, _port.resourceName.c_str(), _port.origin.value().iterationIndex, _port.origin.value().instructionIndex, _otherPort.resourceIndex);
+                }
+              }
+            }
+          }
+        }
+
+        fputs("\n</div></div>\n", pOutFile);
 
         virtualAddress += instruction.length;
       }
@@ -602,7 +684,7 @@ int main(int argc, char **pArgv)
       fputs("<div class=\"flowgraph\"><table class=\"flow\"><tr>\n", pOutFile);
 
       for (const auto &_port : flow.ports)
-        fprintf(pOutFile, "<th>%s</th>\n", _port.name.c_str());
+        fprintf(pOutFile, "<th>%s<div class=\"th_float\">%s</div></th>\n", _port.name.c_str(), _port.name.c_str());
 
       fputs("</tr>\n<tr>", pOutFile);
 
@@ -623,7 +705,7 @@ int main(int argc, char **pArgv)
               if (_port.resourceIndex != i)
                 continue;
 
-              fprintf(pOutFile, "<div class=\"laneinst\" title=\"%s (Iteration %" PRIu64 ")\" idx=\"%" PRIu64 "\" iter=\"%" PRIu64 "\" style=\"--iter: %" PRIu64 "; --off: %" PRIu64 "; --len: %" PRIu64 "; --idx: %" PRIu64 "; --lane: %" PRIu64 ";\"></div><div class=\"instex\" idx=\"%" PRIu64 "\">\n", disassemblyLines[_inst.instructionIndex].c_str(), iterationIndex + 1, _inst.instructionIndex, iterationIndex, iterationIndex, _iter.clockIssued, _iter.clockExecuted - _iter.clockIssued, _inst.instructionIndex, i, _inst.instructionIndex);
+              fprintf(pOutFile, "<div class=\"laneinst\" title=\"%s (Iteration %" PRIu64 ")\" idx=\"%" PRIu64 "\" iter=\"%" PRIu64 "\" lane=\"%" PRIu64 "\" style=\"--iter: %" PRIu64 "; --off: %" PRIu64 "; --len: %" PRIu64 "; --idx: %" PRIu64 "; --lane: %" PRIu64 ";\"></div><div class=\"instex\" idx=\"%" PRIu64 "\">\n", disassemblyLines[_inst.instructionIndex].c_str(), iterationIndex + 1, _inst.instructionIndex, iterationIndex, i, iterationIndex, _iter.clockIssued, _iter.clockExecuted - _iter.clockIssued, _inst.instructionIndex, i, _inst.instructionIndex);
               fprintf(pOutFile, "\t<div class=\"inst dispatched\" style=\"--s: %" PRIu64 "; --l: %" PRIu64 ";\"></div>\n", _iter.clockDispatched, _iter.clockPending - _iter.clockDispatched);
               fprintf(pOutFile, "\t<div class=\"inst pending\" style=\"--s: %" PRIu64 "; --l: %" PRIu64 ";\"></div>\n", _iter.clockPending, _iter.clockReady - _iter.clockPending);
               fprintf(pOutFile, "\t<div class=\"inst ready\" style=\"--s: %" PRIu64 "; --l: %" PRIu64 ";\"></div>\n", _iter.clockReady, _iter.clockIssued - _iter.clockReady);
@@ -659,6 +741,39 @@ for (var i = 0; i < lines.length; i++) {
     if (line.parentElement.className.startsWith('disasmline'))
       line = line.parentElement;
 
+    var chld = line.children;
+    var selc = null;
+    
+    for (var i = 0; i < chld.length; i++)
+      if (chld[i].className == 'dependency_data')
+        selc = chld[i];
+    
+    if (selc != null) {
+      chld = selc.children;
+      
+      for (var i = 0; i < chld.length; i++) {
+        var x = chld[i];
+        
+        for (var j = 0; j < inst0.length; j++) { 
+          var n = inst0[j];
+
+          if (x.attributes['iteration'].value == n.attributes['iter'].value && x.attributes['index'].value == n.attributes['idx'].value) {
+            n.className = "laneinst dependent";
+            n.style.setProperty('--cycles', x.attributes['cycles'].value);
+            
+            if (x.className == '__reg')
+              n.style.setProperty('--type', "'reg'");
+            else if (x.className == '__mem')
+              n.style.setProperty('--type', "'mem'");
+            else if (x.className == '__rsc')
+              n.style.setProperty('--type', "'rsc'");
+            else
+              n.style.setProperty('--type', "'??'");
+          }
+        }
+      }
+    }
+
     line.className = "disasmline selected";
 
     var idx = line.attributes['idx'].value;
@@ -667,7 +782,7 @@ for (var i = 0; i < lines.length; i++) {
       if (inst0[j].attributes['idx'].value != idx)
         continue;
       
-      inst0[j].className = "laneinst selected";
+      inst0[j].className += " selected";
     }
     
     for (var j = 0; j < inst1.length; j++) {
@@ -708,6 +823,28 @@ for (var i = 0; i < lines.length; i++) {
 
     if (line.parentElement.className.startsWith('disasmline'))
       line = line.parentElement;
+    
+    var chld = line.children;
+    var selc = null;
+    
+    for (var i = 0; i < chld.length; i++)
+      if (chld[i].className == 'dependency_data')
+        selc = chld[i];
+    
+    if (selc != null) {
+      chld = selc.children;
+      
+      for (var i = 0; i < chld.length; i++) {
+        var x = chld[i];
+        
+        for (var j = 0; j < inst0.length; j++) { 
+          var n = inst0[j];
+
+          if (x.attributes['iteration'].value == n.attributes['iter'].value && x.attributes['index'].value == n.attributes['idx'].value)
+            n.className = "laneinst";
+        }
+      }
+    }
 
     line.className = "disasmline";
 
