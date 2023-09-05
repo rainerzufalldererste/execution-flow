@@ -94,15 +94,15 @@ static const char *CoreArchitectureLookup[] =
   "znver4",
 };
 
-static_assert(std::size(CoreArchitectureLookup) == (size_t)CoreArchitecture::_Size);
+static_assert(std::size(CoreArchitectureLookup) == (size_t)CoreArchitecture::_Count);
+
+const char *core_arch_to_string(const CoreArchitecture arch);
 
 ////////////////////////////////////////////////////////////////////////////////
 
-#pragma optimize ("", off)
-
 bool execution_flow_create(const void *pAssembledBytes, const size_t assembledBytesLength, PortUsageFlow *pFlow, const CoreArchitecture arch, const size_t iterations, const size_t relevantIteration)
 {
-  if (pFlow == nullptr || pAssembledBytes == nullptr || (uint64_t)arch > (uint64_t)CoreArchitecture::_Size || relevantIteration >= iterations || iterations > UINT32_MAX)
+  if (pFlow == nullptr || pAssembledBytes == nullptr || (uint64_t)arch > (uint64_t)CoreArchitecture::_Count || relevantIteration >= iterations || iterations > UINT32_MAX)
     return false;
 
   static llvm::mc::RegisterMCTargetOptionsFlags targetOptionFlags;
@@ -133,7 +133,7 @@ bool execution_flow_create(const void *pAssembledBytes, const size_t assembledBy
   if (arch == CoreArchitecture::_CurrentCPU)
     subtargetInfo = std::unique_ptr<llvm::MCSubtargetInfo>(pTarget->createMCSubtargetInfo(targetTriple.str(), llvm::sys::getHostCPUName(), ""));
   else
-    subtargetInfo = std::unique_ptr<llvm::MCSubtargetInfo>(pTarget->createMCSubtargetInfo(targetTriple.str(), CoreArchitectureLookup[(size_t)arch], ""));
+    subtargetInfo = std::unique_ptr<llvm::MCSubtargetInfo>(pTarget->createMCSubtargetInfo(targetTriple.str(), core_arch_to_string(arch), ""));
 
   // Create Machine Code Context from the triple.
   llvm::MCContext context(targetTriple, asmInfo.get(), registerInfo.get(), subtargetInfo.get());
@@ -292,4 +292,12 @@ bool execution_flow_create(const void *pAssembledBytes, const size_t assembledBy
   *pFlow = std::move(flow);
 
   return result;
+}
+
+const char *core_arch_to_string(const CoreArchitecture arch)
+{
+  if ((size_t)arch >= std::size(CoreArchitectureLookup))
+    return nullptr;
+
+  return CoreArchitectureLookup[(size_t)arch];
 }
