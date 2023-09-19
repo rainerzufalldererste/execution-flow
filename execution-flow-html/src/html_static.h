@@ -441,6 +441,14 @@ const char *_HtmlDocumentSetup = R"TEXT(<!DOCTYPE html>
               font-size: 89%;
               line-height: 110%;
             }
+
+            .stats.total {
+              border-left-color: #fb733e;
+            }
+            
+            .stats.total .stats_it h2 {
+              color: #ffbd69;
+            }
         </style>
         <div class="main">
 )TEXT";
