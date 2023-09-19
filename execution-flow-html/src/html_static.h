@@ -406,6 +406,41 @@ const char *_HtmlDocumentSetup = R"TEXT(<!DOCTYPE html>
             .disasmline.selected.static span.linenum, .disasmline.selected.static span.asm {
               filter: invert();
             }
+
+            .stats {
+              margin: 5em 0.5em;
+              border-left: solid 3pt #35949e;
+              padding-left: 0.75em;
+            }
+
+            .stats_it h2 {
+              font-size: 14pt;
+              color: #a7e4ea;
+              margin-bottom: 5pt;
+              margin-top: 20pt;
+            }
+            
+            .stats_it b {
+              display: block;
+              margin-bottom: 1pt;
+            }
+
+            .stats_it i {
+              display: block;
+              color: #7cb9c0;
+            }
+
+            .stats_it i i {
+              display: inline;
+              font-size: 90%;
+              opacity: 50%;
+            }
+
+            .stats_it i.s {
+              color: hsl(calc(var(--h) * -150deg + 180deg), calc(var(--h) * 60% + 20%), calc(var(--h) * 20% + 40%));
+              font-size: 89%;
+              line-height: 110%;
+            }
         </style>
         <div class="main">
 )TEXT";
