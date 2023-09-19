@@ -240,21 +240,36 @@ int main(int argc, char **pArgv)
 
         fprintf(pOutFile, "<div class=\"disasmline\" idx=\"%" PRIu64 "\"><span class=\"linenum%s\">0x%08" PRIX64 "&emsp;</span><span class=\"asm%s\" style=\"--exec: %" PRIu64 ";\">%s</span>", instructionIndex, subVariant, virtualAddress + addressDisplayOffset, subVariant, instructionInfo.clockExecuted - instructionInfo.clockIssued, disasmBuffer);
 
-        // Add Dependency Arrows.
+        size_t dispatched = 0;
+        size_t pending = 0;
+        size_t ready = 0;
+        size_t executing = 0;
+        size_t retiring = 0;
+        const size_t iterations = instructionInfo.perIteration.size();
+
+        // Add Dependency Arrows & Calculate Average Clocks.
         {
-          for (size_t iteration = 0; iteration < instructionInfo.perIteration.size(); iteration++)
+          for (size_t iteration = 0; iteration < iterations; iteration++)
           {
-            const auto &regP = instructionInfo.perIteration[iteration].registerPressure;
+            const auto &it = instructionInfo.perIteration[iteration];
+           
+            dispatched += it.clockPending - it.clockDispatched;
+            pending += it.clockReady - it.clockPending;
+            ready += it.clockIssued - it.clockReady;
+            executing += it.clockExecuted - it.clockIssued;
+            retiring += it.clockRetired - it.clockExecuted;
+            
+            const auto &regP = it.registerPressure;
 
             if (regP.selfPressureCycles > 0 && regP.origin.has_value() && regP.origin.value().iterationIndex != (size_t)-1)
               fprintf(pOutFile, "<div class=\"depptr register\" style=\"--e: %" PRIi64 "\"></div>", (int64_t)instructionInfo.instructionIndex - regP.origin.value().instructionIndex);
 
-            const auto &memP = instructionInfo.perIteration[iteration].memoryPressure;
+            const auto &memP = it.memoryPressure;
 
             if (memP.selfPressureCycles > 0 && memP.origin.has_value() && memP.origin.value().iterationIndex != (size_t)-1)
               fprintf(pOutFile, "<div class=\"depptr memory\" style=\"--e: %" PRIi64 "\"></div>", (int64_t)instructionInfo.instructionIndex - memP.origin.value().instructionIndex);
 
-            const auto &rsrcP = instructionInfo.perIteration[iteration].resourcePressure;
+            const auto &rsrcP = it.resourcePressure;
 
             for (const auto &_port : rsrcP.associatedResources)
               if (_port.pressureCycles > 0 && _port.origin.has_value())
@@ -264,12 +279,14 @@ int main(int argc, char **pArgv)
 
         fputs("<div class=\"extra_info\">", pOutFile);
 
+        const double iterationsF = (double)iterations;
+
         fprintf(pOutFile, "<div class=\"uops\">%" PRIu64 " uOps</div>", instructionInfo.uOpCount);
-        fprintf(pOutFile, "<div class=\"cycleInfo\">dispatched: %" PRIu64 " cycles</div>", instructionInfo.clockPending - instructionInfo.clockDispatched);
-        fprintf(pOutFile, "<div class=\"cycleInfo\">pending: %" PRIu64 " cycles</div>", instructionInfo.clockReady - instructionInfo.clockPending);
-        fprintf(pOutFile, "<div class=\"cycleInfo\">ready: %" PRIu64 " cycles</div>", instructionInfo.clockIssued - instructionInfo.clockReady);
-        fprintf(pOutFile, "<div class=\"cycleInfo\">executing: %" PRIu64 " cycles</div>", instructionInfo.clockExecuted - instructionInfo.clockIssued);
-        fprintf(pOutFile, "<div class=\"cycleInfo\">retiring: %" PRIu64 " cycles</div>", instructionInfo.clockRetired - instructionInfo.clockExecuted);
+        fprintf(pOutFile, "<div class=\"cycleInfo\">dispatched: %3.1f cycles</div>", dispatched / iterationsF);
+        fprintf(pOutFile, "<div class=\"cycleInfo\">pending: %3.1f cycles</div>", pending / iterationsF);
+        fprintf(pOutFile, "<div class=\"cycleInfo\">ready: %3.1f cycles</div>", ready / iterationsF);
+        fprintf(pOutFile, "<div class=\"cycleInfo\">executing: %3.1f cycles</div>", executing / iterationsF);
+        fprintf(pOutFile, "<div class=\"cycleInfo\">retiring: %3.1f cycles</div>", retiring / iterationsF);
 
         for (size_t j = 0; j < instructionInfo.physicalRegistersObstructedPerRegisterType.size(); j++)
         {
@@ -362,6 +379,239 @@ int main(int argc, char **pArgv)
         fputs("\n</div></div>\n", pOutFile);
 
         virtualAddress += instruction.length;
+      }
+
+      fputs("<div class=\"stats\">\n", pOutFile);
+
+      size_t allEarliestDispatch = (size_t)-1;
+      size_t allLastRetire = 0;
+      size_t allEarliestIssued = (size_t)-1;
+      size_t allLastExecuted = 0;
+      size_t allTotalDispatched = 0;
+      size_t allTotalPending = 0;
+      size_t allTotalReady = 0;
+      size_t allTotalExecuting = 0;
+      size_t allTotalRetiring = 0;
+
+      enum ExecutionState
+      {
+        ES_Dispatched,
+        ES_Pending,
+        ES_Ready,
+        ES_Executing,
+        ES_Retiring,
+
+        _ES_Count
+      };
+
+      for (size_t i = 0; i < loopIterations; i++)
+      {
+        fprintf(pOutFile, "<div class=\"stats_it\"><h2>Iteration %" PRIu64 "</h2>", i + 1);
+
+        size_t earliestDispatch = (size_t)-1;
+        size_t lastRetire = 0;
+        size_t earliestIssued = (size_t)-1;
+        size_t lastExecuted = 0;
+        size_t totalDispatched = 0;
+        size_t totalPending = 0;
+        size_t totalReady = 0;
+        size_t totalExecuting = 0;
+        size_t totalRetiring = 0;
+
+        // Calculate Averages & Bounds.
+        for (const auto &_instruction : flow.instructionExecutionInfo)
+        {
+          if (_instruction.perIteration.size() <= i)
+            continue;
+
+          const auto &it = _instruction.perIteration[i];
+
+          earliestDispatch = std::min(earliestDispatch, it.clockDispatched);
+          lastRetire = std::max(lastRetire, it.clockRetired);
+
+          earliestIssued = std::min(earliestIssued, it.clockIssued);
+          lastExecuted = std::max(lastExecuted, it.clockExecuted);
+
+          totalDispatched += it.clockPending - it.clockDispatched;
+          totalPending += it.clockReady - it.clockPending;
+          totalReady += it.clockIssued - it.clockReady;
+          totalExecuting += it.clockExecuted - it.clockIssued;
+          totalRetiring += it.clockRetired - it.clockExecuted;
+        }
+
+        allEarliestDispatch = std::min(allEarliestDispatch, earliestDispatch);
+        allLastRetire = std::max(allLastRetire, lastRetire);
+
+        allEarliestIssued = std::min(allEarliestIssued, earliestIssued);
+        allLastExecuted = std::max(allLastExecuted, lastExecuted);
+
+        allTotalDispatched += totalDispatched;
+        allTotalPending += totalPending;
+        allTotalReady += totalReady;
+        allTotalExecuting += totalExecuting;
+        allTotalRetiring += totalRetiring;
+
+        std::vector<size_t> perPortUsage(flow.ports.size(), 0);
+        std::vector<bool> portUsed(flow.ports.size(), false);
+
+        // Check Utilization in Bounds.
+        for (size_t cycle = earliestIssued; cycle < lastExecuted; cycle++)
+        {
+          for (size_t port = 0; port < portUsed.size(); port++)
+            portUsed[port] = false;
+
+          for (const auto &_instruction : flow.instructionExecutionInfo)
+          {
+            if (_instruction.perIteration.size() <= i)
+              continue;
+
+            const auto &it = _instruction.perIteration[i];
+
+            // If active: Mark port as used.
+            if (it.clockIssued <= cycle && it.clockExecuted > cycle)
+              for (const auto &_port : _instruction.usage)
+                portUsed[_port.resourceIndex] = true;
+          }
+
+          for (size_t port = 0; port < portUsed.size(); port++)
+            if (portUsed[port])
+              perPortUsage[port]++;
+        }
+
+        bool stateInUse[_ES_Count];
+        size_t stateCyclesInUse[_ES_Count] = {};
+
+        // Check States in Bounds.
+        for (size_t cycle = earliestDispatch; cycle < lastRetire; cycle++)
+        {
+          for (size_t s = 0; s < _ES_Count; s++)
+            stateInUse[s] = false;
+
+          for (const auto &_instruction : flow.instructionExecutionInfo)
+          {
+            if (_instruction.perIteration.size() <= i)
+              continue;
+
+            const auto &it = _instruction.perIteration[i];
+
+            // If active: Mark state as used.
+            {
+              if (it.clockDispatched <= cycle && it.clockPending > cycle)
+                stateInUse[ES_Dispatched] = true;
+
+              if (it.clockPending <= cycle && it.clockReady > cycle)
+                stateInUse[ES_Pending] = true;
+
+              if (it.clockReady <= cycle && it.clockIssued > cycle)
+                stateInUse[ES_Ready] = true;
+
+              if (it.clockIssued <= cycle && it.clockExecuted > cycle)
+                stateInUse[ES_Executing] = true;
+
+              if (it.clockExecuted <= cycle && it.clockRetired > cycle)
+                stateInUse[ES_Retiring] = true;
+            }
+          }
+
+          for (size_t s = 0; s < _ES_Count; s++)
+            if (stateInUse[s])
+              stateCyclesInUse[s]++;
+        }
+
+        fprintf(pOutFile, "<b>%" PRIu64 " Cycles (first dispatch -> last retire)</b><b>%" PRIu64 " Cycles (first issued -> last executed)</b>", lastRetire - earliestDispatch, lastExecuted - earliestIssued);
+        fprintf(pOutFile, "<i>Dispatched: %" PRIu64 " distinct Cycles <i>(%" PRIu64 " total)</i></i>", stateCyclesInUse[ES_Dispatched], totalDispatched);
+        fprintf(pOutFile, "<i>Pending: %" PRIu64 " distinct Cycles <i>(%" PRIu64 " total)</i></i>", stateCyclesInUse[ES_Pending], totalPending);
+        fprintf(pOutFile, "<i>Ready: %" PRIu64 " distinct Cycles <i>(%" PRIu64 " total)</i></i>", stateCyclesInUse[ES_Ready], totalReady);
+        fprintf(pOutFile, "<i>Executing: %" PRIu64 " distinct Cycles <i>(%" PRIu64 " total)</i></i>", stateCyclesInUse[ES_Executing], totalExecuting);
+        fprintf(pOutFile, "<i>Retiring: %" PRIu64 " distinct Cycles <i>(%" PRIu64 " total)</i></i>", stateCyclesInUse[ES_Retiring], totalRetiring);
+
+        for (size_t i = 0; i < perPortUsage.size(); i++)
+          fprintf(pOutFile, "<i class=\"s\" style=\"--h:%1.4f;\">%s: %4.2f%%</i>", (double)perPortUsage[i] / (lastExecuted - earliestIssued), flow.ports[i].name.c_str(), (100.0 * perPortUsage[i]) / (lastExecuted - earliestIssued));
+
+        fputs("</div>\n", pOutFile);
+      }
+
+      fputs("</div>\n", pOutFile);
+
+      // Total
+      {
+        std::vector<size_t> perPortUsage(flow.ports.size(), 0);
+        std::vector<bool> portUsed(flow.ports.size(), false);
+
+        // Check Utilization in Bounds.
+        for (size_t cycle = allEarliestIssued; cycle < allLastExecuted; cycle++)
+        {
+          for (size_t port = 0; port < portUsed.size(); port++)
+            portUsed[port] = false;
+
+          for (const auto &_instruction : flow.instructionExecutionInfo)
+          {
+            for (const auto &it : _instruction.perIteration)
+            {
+              // If active: Mark port as used.
+              if (it.clockIssued <= cycle && it.clockExecuted > cycle)
+                for (const auto &_port : _instruction.usage)
+                  portUsed[_port.resourceIndex] = true;
+            }
+          }
+
+          for (size_t port = 0; port < portUsed.size(); port++)
+            if (portUsed[port])
+              perPortUsage[port]++;
+        }
+
+        bool stateInUse[_ES_Count];
+        size_t stateCyclesInUse[_ES_Count] = {};
+
+        // Check States in Bounds.
+        for (size_t cycle = allEarliestDispatch; cycle < allLastRetire; cycle++)
+        {
+          for (size_t s = 0; s < _ES_Count; s++)
+            stateInUse[s] = false;
+
+          for (const auto &_instruction : flow.instructionExecutionInfo)
+          {
+            // If active: Mark state as used.
+            for (const auto &it : _instruction.perIteration)
+            {
+              if (it.clockDispatched <= cycle && it.clockPending > cycle)
+                stateInUse[ES_Dispatched] = true;
+
+              if (it.clockPending <= cycle && it.clockReady > cycle)
+                stateInUse[ES_Pending] = true;
+
+              if (it.clockReady <= cycle && it.clockIssued > cycle)
+                stateInUse[ES_Ready] = true;
+
+              if (it.clockIssued <= cycle && it.clockExecuted > cycle)
+                stateInUse[ES_Executing] = true;
+
+              if (it.clockExecuted <= cycle && it.clockRetired > cycle)
+                stateInUse[ES_Retiring] = true;
+            }
+          }
+
+          for (size_t s = 0; s < _ES_Count; s++)
+            if (stateInUse[s])
+              stateCyclesInUse[s]++;
+        }
+
+        const double invLoopItsF = 1.0 / (double)loopIterations;
+
+        fputs("<div class=\"stats total\">\n", pOutFile);
+
+        fputs("<div class=\"stats_it\"><h2>Across all Iterations</h2>", pOutFile);
+        fprintf(pOutFile, "<b>%3.1f Cycles (%" PRIu64 " total) (first dispatch -> last retire)</b><b>%3.1f Cycles (%" PRIu64 " total) (first issued -> last executed)</b>", (allLastRetire - allEarliestDispatch) * invLoopItsF, allLastRetire - allEarliestDispatch, (allLastExecuted - allEarliestIssued) * invLoopItsF, allLastExecuted - allEarliestIssued);
+        fprintf(pOutFile, "<i>Dispatched: %3.1f avg distinct Cycles <i>(%" PRIu64 " total)</i></i>", stateCyclesInUse[ES_Dispatched] * invLoopItsF, allTotalDispatched);
+        fprintf(pOutFile, "<i>Pending: %3.1f avg distinct Cycles <i>(%" PRIu64 " total)</i></i>", stateCyclesInUse[ES_Pending] * invLoopItsF, allTotalPending);
+        fprintf(pOutFile, "<i>Ready: %3.1f avg distinct Cycles <i>(%" PRIu64 " total)</i></i>", stateCyclesInUse[ES_Ready] * invLoopItsF, allTotalReady);
+        fprintf(pOutFile, "<i>Executing: %3.1f avg distinct Cycles <i>(%" PRIu64 " total)</i></i>", stateCyclesInUse[ES_Executing] * invLoopItsF, allTotalExecuting);
+        fprintf(pOutFile, "<i>Retiring: %3.1f avg distinct Cycles <i>(%" PRIu64 " total)</i></i>", stateCyclesInUse[ES_Retiring] * invLoopItsF, allTotalRetiring);
+
+        for (size_t i = 0; i < perPortUsage.size(); i++)
+          fprintf(pOutFile, "<i class=\"s\" style=\"--h:%1.4f;\">%s: %4.2f%%</i>", (double)perPortUsage[i] / (allLastExecuted - allEarliestIssued), flow.ports[i].name.c_str(), (100.0 * perPortUsage[i]) / (allLastExecuted - allEarliestIssued));
+
+        fputs("</div></div>\n", pOutFile);
       }
 
       fputs("<div class=\"spacer\"></div></div>\n</div>\n", pOutFile);
