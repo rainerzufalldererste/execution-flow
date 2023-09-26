@@ -289,6 +289,9 @@ void FlowView::onEvent(const llvm::mca::HWPressureEvent &evnt)
     case llvm::mca::HWPressureEvent::MEMORY_DEPS:
       occurence.memoryPressure.totalPressureCycles++;
       break;
+
+    default:
+      break;
     }
   }
 }
