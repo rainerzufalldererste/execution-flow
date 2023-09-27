@@ -76,8 +76,8 @@ private:
 public:
   inline FlowView(PortUsageFlow *pFlow, const llvm::MCSchedModel &schedulerModel, const llvm::MCInstPrinter &instructionPrinter, const size_t relevantIteration) :
     pFlow(pFlow),
-    schedulerModel(schedulerModel),
     relevantIteration(relevantIteration),
+    schedulerModel(schedulerModel),
     instructionPrinter(instructionPrinter)
   { }
 

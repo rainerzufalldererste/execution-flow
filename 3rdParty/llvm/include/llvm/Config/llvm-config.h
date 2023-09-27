@@ -15,11 +15,11 @@
 #define LLVM_CONFIG_H
 
 /* Define if LLVM_ENABLE_DUMP is enabled */
-/* #undef LLVM_ENABLE_DUMP */
+#define LLVM_ENABLE_DUMP
 
 /* Target triple LLVM will generate code for by default */
 /* Doesn't use `cmakedefine` because it is allowed to be empty. */
-#define LLVM_DEFAULT_TARGET_TRIPLE "x86_64-pc-windows-msvc"
+#define LLVM_DEFAULT_TARGET_TRIPLE "x86_64-pc-linux-gnu"
 
 /* Define if threads enabled */
 #define LLVM_ENABLE_THREADS 1
@@ -28,7 +28,7 @@
 #define LLVM_HAS_ATOMICS 1
 
 /* Host triple LLVM will be executed on */
-#define LLVM_HOST_TRIPLE "x86_64-pc-windows-msvc"
+#define LLVM_HOST_TRIPLE "x86_64-pc-linux-gnu"
 
 /* LLVM architecture name for the native architecture, if available */
 #define LLVM_NATIVE_ARCH X86
@@ -55,7 +55,7 @@
 /* #undef LLVM_NATIVE_TARGETMCA */
 
 /* Define if this is Unixish platform */
-/* #undef LLVM_ON_UNIX */
+#define LLVM_ON_UNIX 1
 
 /* Define if we have the Intel JIT API runtime support library */
 #define LLVM_USE_INTEL_JITEVENTS 0
@@ -64,7 +64,7 @@
 #define LLVM_USE_OPROFILE 0
 
 /* Define if we have the perf JIT-support library */
-#define LLVM_USE_PERF 0
+#define LLVM_USE_PERF 1
 
 /* Major version of the LLVM API */
 #define LLVM_VERSION_MAJOR 17
@@ -73,10 +73,10 @@
 #define LLVM_VERSION_MINOR 0
 
 /* Patch version of the LLVM API */
-#define LLVM_VERSION_PATCH 0
+#define LLVM_VERSION_PATCH 2
 
 /* LLVM version string */
-#define LLVM_VERSION_STRING "17.0.0git"
+#define LLVM_VERSION_STRING "17.0.2"
 
 /* Whether LLVM records statistics for use with GetStatistics(),
  * PrintStatistics() or PrintStatisticsJSON()
@@ -87,28 +87,28 @@
 /* #undef LLVM_WITH_Z3 */
 
 /* Define if we have curl and want to use it */
-/* #undef LLVM_ENABLE_CURL */
+#define LLVM_ENABLE_CURL 1
 
 /* Define if we have cpp-httplib and want to use it */
 /* #undef LLVM_ENABLE_HTTPLIB */
 
 /* Define if zlib compression is available */
-#define LLVM_ENABLE_ZLIB 0
+#define LLVM_ENABLE_ZLIB 1
 
 /* Define if zstd compression is available */
-#define LLVM_ENABLE_ZSTD 0
+#define LLVM_ENABLE_ZSTD 1
 
 /* Define if LLVM is using tflite instead of libtensorflow */
 /* #undef LLVM_HAVE_TFLITE */
 
 /* Define to 1 if you have the <sysexits.h> header file. */
-/* #undef HAVE_SYSEXITS_H */
+#define HAVE_SYSEXITS_H 1
 
 /* Define if the xar_open() function is supported on this platform. */
 /* #undef LLVM_HAVE_LIBXAR */
 
 /* Define if building libLLVM shared library */
-/* #undef LLVM_BUILD_LLVM_DYLIB */
+#define LLVM_BUILD_LLVM_DYLIB
 
 /* Define if building LLVM with BUILD_SHARED_LIBS */
 /* #undef LLVM_BUILD_SHARED_LIBS */
@@ -124,6 +124,6 @@
 #define LLVM_ENABLE_DIA_SDK 0
 
 /* Define if plugins enabled */
-/* #undef LLVM_ENABLE_PLUGINS */
+#define LLVM_ENABLE_PLUGINS
 
 #endif
