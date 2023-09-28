@@ -30,6 +30,18 @@
 
 #include "llvm/MCA/Support.h"
 
+#ifdef _MSC_VER
+
+#ifdef assert
+#undef assert
+#endif
+
+#define assert(a) do { if (!(a)) { puts("Assertion Failed: '" #a "' in " __FILE__ ": " _STRINGIZE(__LINE__)); __debugbreak(); } } while (false)
+
+#pragma optimize("", off)
+
+#endif
+
 ////////////////////////////////////////////////////////////////////////////////
 
 void FlowView::onEvent(const llvm::mca::HWInstructionEvent &evnt)
@@ -61,7 +73,8 @@ void FlowView::onEvent(const llvm::mca::HWInstructionEvent &evnt)
 
       for (size_t i = 0; i < dispatchedEvent.UsedPhysRegs.size(); i++)
       {
-        assert(i < isRegisterFileRelevant.size() && "More register files used than previously added");
+        if (i >= isRegisterFileRelevant.size()) // More register files used than previously added. Appears to happen with some architectures that have no idea about the virtual register file.
+          continue;
 
         if (!isRegisterFileRelevant[i]) // Skip ones that were empty.
           continue;

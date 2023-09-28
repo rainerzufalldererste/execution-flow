@@ -69,6 +69,16 @@
 #pragma GCC diagnostic pop
 #endif
 
+#ifdef _MSC_VER
+#ifdef assert
+#undef assert
+#endif
+
+#define assert(a) do { if (!(a)) { puts("Assertion Failed: '" #a "' in " __FILE__ ": " _STRINGIZE(__LINE__)); __debugbreak(); } } while (false)
+
+#pragma optimize("", off)
+#endif
+
 ////////////////////////////////////////////////////////////////////////////////
 
 static const char *CoreArchitectureLookup[] =

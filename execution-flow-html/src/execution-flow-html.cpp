@@ -95,6 +95,10 @@ static_assert(std::size(TargetLookup) == (size_t)CoreArchitecture::_Count);
 
 ////////////////////////////////////////////////////////////////////////////////
 
+#ifdef _MSC_VER
+#pragma optimize("", off)
+#endif
+
 int main(int argc, char **pArgv)
 {
   if (argc < 3)
