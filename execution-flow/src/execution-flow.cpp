@@ -33,7 +33,14 @@
 #include <algorithm>
 #include <queue>
 
+#ifdef _MSC_VER
 #pragma warning (push, 0)
+#else
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wall"
+#pragma GCC diagnostic ignored "-Wextra"
+#endif
+
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
@@ -55,7 +62,12 @@
 #include "llvm/MCA/SourceMgr.h"
 #include "llvm/MCA/Stages/Stage.h"
 #include "llvm/MCA/Stages/InstructionTables.h"
+
+#ifdef _MSC_VER
 #pragma warning (pop)
+#else
+#pragma GCC diagnostic pop
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 

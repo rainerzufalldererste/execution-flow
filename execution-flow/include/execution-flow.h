@@ -113,7 +113,7 @@ struct HardwareRegisterCount
 
 struct BasicInstructionInfo
 {
-  size_t clockPending, clockReady, clockIssued, clockExecuted, clockDispatched, clockRetired;
+  size_t clockPending, clockReady, clockIssued, clockExecuted, clockDispatched, clockRetired, uOps;
   std::vector<ResourcePressureInfo> usage;
 
   inline BasicInstructionInfo() :

@@ -52,10 +52,10 @@ void FlowView::onEvent(const llvm::mca::HWInstructionEvent &evnt)
   {
   case llvm::mca::HWInstructionEvent::Dispatched:
   {
+    const auto &dispatchedEvent = static_cast<const llvm::mca::HWInstructionDispatchedEvent &>(evnt);
+
     if (runIndex == relevantIteration)
     {
-      const auto &dispatchedEvent = static_cast<const llvm::mca::HWInstructionDispatchedEvent &>(evnt);
-
       instructionInfo.clockDispatched = instructionClock - firstObservedInstructionClock;
       instructionInfo.uOpCount = dispatchedEvent.MicroOpcodes;
 
@@ -74,6 +74,7 @@ void FlowView::onEvent(const llvm::mca::HWInstructionEvent &evnt)
       instructionInfo.perIteration.resize(runIndex + 1);
 
     instructionInfo.perIteration[runIndex].clockDispatched = instructionClock;
+    instructionInfo.perIteration[runIndex].uOps = dispatchedEvent.MicroOpcodes;
 
     // Keep this instruction in-flight till it's been executed.
     inFlightInstructions.insert(std::make_pair(std::make_pair(runIndex, instructionIndex), true));
