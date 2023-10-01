@@ -30,6 +30,18 @@
 
 #include "llvm/MCA/Support.h"
 
+#ifdef _MSC_VER
+
+#ifdef assert
+#undef assert
+#endif
+
+#define assert(a) do { if (!(a)) { puts("Assertion Failed: '" #a "' in " __FILE__ ": " _STRINGIZE(__LINE__)); __debugbreak(); } } while (false)
+
+#pragma optimize("", off)
+
+#endif
+
 ////////////////////////////////////////////////////////////////////////////////
 
 void FlowView::onEvent(const llvm::mca::HWInstructionEvent &evnt)
@@ -52,16 +64,17 @@ void FlowView::onEvent(const llvm::mca::HWInstructionEvent &evnt)
   {
   case llvm::mca::HWInstructionEvent::Dispatched:
   {
+    const auto &dispatchedEvent = static_cast<const llvm::mca::HWInstructionDispatchedEvent &>(evnt);
+
     if (runIndex == relevantIteration)
     {
-      const auto &dispatchedEvent = static_cast<const llvm::mca::HWInstructionDispatchedEvent &>(evnt);
-
       instructionInfo.clockDispatched = instructionClock - firstObservedInstructionClock;
       instructionInfo.uOpCount = dispatchedEvent.MicroOpcodes;
 
       for (size_t i = 0; i < dispatchedEvent.UsedPhysRegs.size(); i++)
       {
-        assert(i < isRegisterFileRelevant.size() && "More register files used than previously added");
+        if (i >= isRegisterFileRelevant.size()) // More register files used than previously added. Appears to happen with some architectures that have no idea about the virtual register file.
+          continue;
 
         if (!isRegisterFileRelevant[i]) // Skip ones that were empty.
           continue;
@@ -74,6 +87,7 @@ void FlowView::onEvent(const llvm::mca::HWInstructionEvent &evnt)
       instructionInfo.perIteration.resize(runIndex + 1);
 
     instructionInfo.perIteration[runIndex].clockDispatched = instructionClock;
+    instructionInfo.perIteration[runIndex].uOps = dispatchedEvent.MicroOpcodes;
 
     // Keep this instruction in-flight till it's been executed.
     inFlightInstructions.insert(std::make_pair(std::make_pair(runIndex, instructionIndex), true));
@@ -288,6 +302,9 @@ void FlowView::onEvent(const llvm::mca::HWPressureEvent &evnt)
   
     case llvm::mca::HWPressureEvent::MEMORY_DEPS:
       occurence.memoryPressure.totalPressureCycles++;
+      break;
+
+    default:
       break;
     }
   }

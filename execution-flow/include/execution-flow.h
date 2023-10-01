@@ -92,9 +92,9 @@ struct ResourceInfo
 struct ResourcePressureInfo
 {
   size_t resourceIndex;
-  double_t pressure;
+  double pressure;
 
-  inline ResourcePressureInfo(const size_t index, const double_t pressure) :
+  inline ResourcePressureInfo(const size_t index, const double pressure) :
     resourceIndex(index),
     pressure(pressure)
   { }
@@ -113,7 +113,7 @@ struct HardwareRegisterCount
 
 struct BasicInstructionInfo
 {
-  size_t clockPending, clockReady, clockIssued, clockExecuted, clockDispatched, clockRetired;
+  size_t clockPending, clockReady, clockIssued, clockExecuted, clockDispatched, clockRetired, uOps;
   std::vector<ResourcePressureInfo> usage;
 
   inline BasicInstructionInfo() :
